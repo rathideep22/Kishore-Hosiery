@@ -1,0 +1,122 @@
+{
+  "typography": {
+    "strategy": "Swiss Brutalist High-Contrast",
+    "headings": {
+      "fontFamily": "Work Sans",
+      "weights": ["700", "900"],
+      "usage": "Large, bold headers for easy scanning in poor warehouse lighting."
+    },
+    "body": {
+      "fontFamily": "IBM Plex Sans",
+      "weights": ["400", "500", "600"],
+      "usage": "Highly legible body text, excellent for order numbers, quantities, and bilingual Hindi/English text."
+    },
+    "scale": {
+      "h1": "text-4xl tracking-tighter",
+      "h2": "text-2xl tracking-tight",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm uppercase tracking-widest"
+    }
+  },
+  "colors": {
+    "archetype": "SWISS & HIGH-CONTRAST",
+    "background": {
+      "primary": "#FFFFFF",
+      "secondary": "#F4F4F5",
+      "surface": "#FAFAFA"
+    },
+    "text": {
+      "primary": "#09090B",
+      "secondary": "#52525B",
+      "inverse": "#FFFFFF"
+    },
+    "brand": {
+      "primary": "#09090B",
+      "accent": "#27272A"
+    },
+    "status": {
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "danger": "#EF4444",
+      "info": "#3B82F6"
+    }
+  },
+  "visual enhancers": {
+    "surface_strategy": "Grid Borders & Flat Solid",
+    "borders": "1px solid #E4E4E7 on all cards, inputs, and list items. Avoid soft muddy shadows.",
+    "shapes": "Slightly rounded corners (rounded-md) for inputs, sharp edges for full-width lists.",
+    "icons": "Use lucide-react-native. Bold, recognizable outlines with sufficient size (min 24px)."
+  },
+  "component name": {
+    "buttons": "Pill-shaped or slightly rounded large buttons. Minimum touch target height 48px.",
+    "cards": "Flat solid background with 1px border. High contrast data pairs (Label: gray text-sm, Value: black bold text-lg).",
+    "inputs": "Large touch areas (min 48px height), clear active borders (border-black/50)."
+  },
+  "grids": {
+    "dashboard_stats": "2-column bento-style grid for numeric summaries. 1-column for recent orders list to maximize width.",
+    "spacing": "Use gap-4 or gap-6 generously to prevent accidental mis-taps by workers."
+  },
+  "layouts": {
+    "mobile_first": true,
+    "screen_padding": "px-4 py-6",
+    "navigation": "Bottom tab bar for Admin (Dashboard, Orders, Users, Settings), simple Stack navigator for Staff assigned tasks."
+  },
+  "motion": {
+    "interactions": "Use LayoutAnimation or react-native-reanimated for smooth list transitions. Buttons MUST have visual feedback on press (opacity change or scale down).",
+    "loading": "Use skeleton loaders for data fetching instead of infinite spinners to reduce cognitive load."
+  },
+  "accessibility": {
+    "touch_targets": "MINIMUM 48x48px for all interactive elements. Non-negotiable for godown workers.",
+    "contrast": "Black on White, White on Black. APCA compliant.",
+    "test_ids": "Include testID attribute on all touchables and inputs (e.g., testID='login-submit-button').",
+    "bilingual": "Support mixed Hindi/English text without line-height clipping by using loose leading."
+  },
+  "media": {
+    "logo_guidance": "Use a simple monochromatic typographic 'KH' inside overlapping circular lines with 'KISHOR HOSIERY' below.",
+    "empty_states": "Use minimalist grayscale images or simple SVGs to represent empty queues."
+  },
+  "3d libraries": {
+    "usage": "None. The application must be highly performant on low-end Android devices used by godown staff."
+  },
+  "image_urls": [
+    {
+      "category": "empty_state",
+      "description": "Abstract cardboard boxes for empty order lists or no tasks.",
+      "url": "https://images.unsplash.com/photo-1772920908589-d6264e5d987f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwyfHxlbXB0eSUyMGNhcmRib2FyZCUyMGJveHxlbnwwfHx8fDE3NzQwODU3MDl8MA&ixlib=rb-4.1.0&q=85",
+      "where_to_add": "Empty Orders Screen / Dashboard"
+    },
+    {
+      "category": "login_background",
+      "description": "Warehouse workers managing inventory. Use with a heavy white overlay (opacity 90%) for the login screen background to provide subtle texture without distraction.",
+      "url": "https://images.pexels.com/photos/4487365/pexels-photo-4487365.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "where_to_add": "Login Screen Background"
+    }
+  ],
+  "component_path": {
+    "screens": "/app/src/screens/",
+    "components": "/app/src/components/"
+  },
+  "instructions_to_main_agent": [
+    "Build an Expo React Native app using .js files ONLY (NOT .tsx).",
+    "Do NOT use HTML/DOM elements (div, span). Use standard React Native components (View, Text, TouchableOpacity, ScrollView, FlatList).",
+    "For styling, you can use NativeWind if set up, or standard React Native StyleSheet objects mapped to the defined design system.",
+    "Ensure all buttons and inputs have a minimum height of 48px to accommodate non-technical Indian godown workers.",
+    "Use 'lucide-react-native' for all iconography.",
+    "Implement a stark, monochromatic Black & White theme to match the Kishor Hosiery brand. Only use colors for status indicators (Red for Alert/Danger, Green for Success/Dispatch, Orange for Pending).",
+    "Include a prominent Bell Notification icon with a badge count in the header for real-time alerts.",
+    "Design for performance: optimize FlatLists, avoid unnecessary re-renders, and use pure React Native animations.",
+    "Do NOT center align all layouts. Use left alignment for data, labels, and lists to ensure natural reading flow.",
+    "Ensure the UI handles bilingual text (Hindi/English mix) gracefully without text cut-offs.",
+    "Use `testID` (React Native equivalent of data-testid) for all interactive and key informational elements with role-based kebab-case naming."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Avoid generic 'AI slop' aesthetics. Use high contrast, sharp edges, and purposeful layouts instead of generic soft shadows.",
+    "Never use dark colors as gradients. Use solid colors instead.",
+    "Do NOT use completely transparent backgrounds for overlapping content like modals, sticky headers, or dropdowns.",
+    "All interactive elements MUST include a 'testID' attribute to facilitate robust automated testing.",
+    "Do NOT use AI assistant emojis for icons. Use proper SVG icons from the recommended library.",
+    "Provide clear focus/pressed states using activeOpacity on TouchableOpacity or underlayColor on TouchableHighlight. Static interactions feel dead.",
+    "Create depth through 1px borders rather than muddy shadows. Embrace the 'Swiss Brutalist' aesthetic.",
+    "Always use modern button styles like pill-shaped or sharp rectangles, aligning with the app's professional and robust feel."
+  ]
+}
