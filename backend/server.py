@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Header, Query
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -6,53 +6,594 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional, Dict
 import uuid
-from datetime import datetime
-
+from datetime import datetime, timezone, timedelta
+import jwt
+import asyncio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
-app = FastAPI()
+JWT_SECRET = os.environ['JWT_SECRET']
+JWT_ALGORITHM = 'HS256'
+MOCK_OTP = '1234'
 
-# Create a router with the /api prefix
+app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-# Define Models
-class StatusCheck(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+# ─── Models ───────────────────────────────────────────────────────────────────
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
+class SendOTPRequest(BaseModel):
+    phone: str
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.dict()
-    status_obj = StatusCheck(**status_dict)
-    _ = await db.status_checks.insert_one(status_obj.dict())
-    return status_obj
+class VerifyOTPRequest(BaseModel):
+    phone: str
+    otp: str
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    status_checks = await db.status_checks.find().to_list(1000)
-    return [StatusCheck(**status_check) for status_check in status_checks]
+class CreateUserRequest(BaseModel):
+    phone: str
+    firstName: str
+    lastName: str
+    role: str
 
-# Include the router in the main app
+class CreateOrderRequest(BaseModel):
+    partyName: str
+    message: str
+    totalParcels: int
+
+class UpdateOrderRequest(BaseModel):
+    partyName: Optional[str] = None
+    message: Optional[str] = None
+    totalParcels: Optional[int] = None
+
+class GodownUpdateRequest(BaseModel):
+    godown: str
+    readyParcels: int
+
+
+# ─── WebSocket Manager ───────────────────────────────────────────────────────
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, WebSocket] = {}
+
+    async def connect(self, websocket: WebSocket, user_id: str):
+        await websocket.accept()
+        self.active_connections[user_id] = websocket
+
+    def disconnect(self, user_id: str):
+        self.active_connections.pop(user_id, None)
+
+    async def broadcast(self, message: dict):
+        for uid, conn in list(self.active_connections.items()):
+            try:
+                await conn.send_json(message)
+            except Exception:
+                self.disconnect(uid)
+
+    async def send_to_user(self, user_id: str, message: dict):
+        conn = self.active_connections.get(user_id)
+        if conn:
+            try:
+                await conn.send_json(message)
+            except Exception:
+                self.disconnect(user_id)
+
+manager = ConnectionManager()
+
+
+# ─── Auth Helpers ─────────────────────────────────────────────────────────────
+
+def create_token(user: dict) -> str:
+    payload = {
+        "userId": user['id'],
+        "phone": user['phone'],
+        "role": user['role'],
+        "exp": datetime.now(timezone.utc) + timedelta(days=30)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+async def get_auth_user(authorization: str = Header(None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No valid token provided")
+    token = authorization.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user = await db.users.find_one({"id": payload['userId']}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def require_admin(user: dict):
+    if user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+# ─── Notification & Audit Helpers ─────────────────────────────────────────────
+
+async def create_notification(user_id: str, message: str, ntype: str, order_id: str = None):
+    notif = {
+        "id": str(uuid.uuid4()),
+        "userId": user_id,
+        "message": message,
+        "type": ntype,
+        "orderId": order_id,
+        "read": False,
+        "createdAt": datetime.now(timezone.utc).isoformat()
+    }
+    await db.notifications.insert_one({**notif})
+    await manager.send_to_user(user_id, {"type": "NOTIFICATION", "notification": notif})
+    return notif
+
+
+async def create_audit_log(user_id: str, action: str, order_id: str = None, details: str = ""):
+    log_entry = {
+        "id": str(uuid.uuid4()),
+        "userId": user_id,
+        "action": action,
+        "orderId": order_id,
+        "details": details,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    await db.audit_logs.insert_one({**log_entry})
+
+
+async def get_next_order_id():
+    counter = await db.counters.find_one_and_update(
+        {"name": "orderId"},
+        {"$inc": {"value": 1}},
+        upsert=True,
+        return_document=True
+    )
+    return counter['value']
+
+
+# ─── Auth Routes ──────────────────────────────────────────────────────────────
+
+@api_router.post("/auth/send-otp")
+async def send_otp(req: SendOTPRequest):
+    user = await db.users.find_one({"phone": req.phone}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found. Only pre-registered users can login.")
+    # Mock OTP — in production replace with Twilio
+    await db.otp_store.update_one(
+        {"phone": req.phone},
+        {"$set": {"otp": MOCK_OTP, "createdAt": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    return {"message": "OTP sent successfully", "mock_otp": MOCK_OTP}
+
+
+@api_router.post("/auth/verify-otp")
+async def verify_otp(req: VerifyOTPRequest):
+    user = await db.users.find_one({"phone": req.phone}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if req.otp != MOCK_OTP:
+        stored = await db.otp_store.find_one({"phone": req.phone})
+        if not stored or stored.get('otp') != req.otp:
+            raise HTTPException(status_code=400, detail="Invalid OTP")
+    token = create_token(user)
+    return {"token": token, "user": user}
+
+
+@api_router.get("/auth/me")
+async def get_me(user: dict = Depends(get_auth_user)):
+    return user
+
+
+# ─── User Routes ──────────────────────────────────────────────────────────────
+
+@api_router.get("/users")
+async def get_users(user: dict = Depends(get_auth_user)):
+    require_admin(user)
+    users = await db.users.find({}, {"_id": 0}).to_list(100)
+    return users
+
+
+@api_router.post("/users")
+async def create_user(req: CreateUserRequest, user: dict = Depends(get_auth_user)):
+    require_admin(user)
+    existing = await db.users.find_one({"phone": req.phone})
+    if existing:
+        raise HTTPException(status_code=400, detail="Phone number already registered")
+    new_user = {
+        "id": str(uuid.uuid4()),
+        "phone": req.phone,
+        "firstName": req.firstName,
+        "lastName": req.lastName,
+        "role": req.role,
+        "createdAt": datetime.now(timezone.utc).isoformat()
+    }
+    await db.users.insert_one({**new_user})
+    await create_audit_log(user['id'], "USER_CREATED", None, f"Created user {req.firstName} {req.lastName}")
+    return new_user
+
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, user: dict = Depends(get_auth_user)):
+    require_admin(user)
+    target = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target['role'] == 'admin':
+        raise HTTPException(status_code=400, detail="Cannot delete admin users")
+    await db.users.delete_one({"id": user_id})
+    await create_audit_log(user['id'], "USER_DELETED", None, f"Deleted user {target['firstName']} {target['lastName']}")
+    return {"message": "User deleted"}
+
+
+# ─── Order Routes ─────────────────────────────────────────────────────────────
+
+@api_router.get("/orders")
+async def get_orders(
+    user: dict = Depends(get_auth_user),
+    status: Optional[str] = None,
+    search: Optional[str] = None
+):
+    conditions = []
+    two_days_ago = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    conditions.append({
+        "$or": [
+            {"dispatched": False},
+            {"dispatched": True, "dispatchedAt": {"$gte": two_days_ago}}
+        ]
+    })
+    if status == 'ready':
+        conditions.append({"readinessStatus": "Ready", "dispatched": False})
+    elif status == 'partial':
+        conditions.append({"readinessStatus": "Partial Ready", "dispatched": False})
+    elif status == 'pending':
+        conditions.append({"readinessStatus": "Pending", "dispatched": False})
+    elif status == 'dispatched':
+        conditions.append({"dispatched": True})
+    elif status == 'active':
+        conditions.append({"dispatched": False})
+    if search:
+        conditions.append({
+            "$or": [
+                {"partyName": {"$regex": search, "$options": "i"}},
+                {"orderId": {"$regex": search, "$options": "i"}}
+            ]
+        })
+    query = {"$and": conditions} if conditions else {}
+    orders = await db.orders.find(query, {"_id": 0}).sort("createdAt", -1).to_list(500)
+    return orders
+
+
+@api_router.post("/orders")
+async def create_order(req: CreateOrderRequest, user: dict = Depends(get_auth_user)):
+    require_admin(user)
+    order_num = await get_next_order_id()
+    order = {
+        "id": str(uuid.uuid4()),
+        "orderId": f"KH-{order_num:04d}",
+        "partyName": req.partyName,
+        "message": req.message,
+        "totalParcels": req.totalParcels,
+        "invoiceGiven": False,
+        "transportSlip": False,
+        "godownDistribution": [],
+        "readinessStatus": "Pending",
+        "dispatched": False,
+        "dispatchedAt": None,
+        "createdBy": user['id'],
+        "createdByName": f"{user['firstName']} {user['lastName']}",
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "updatedAt": datetime.now(timezone.utc).isoformat()
+    }
+    await db.orders.insert_one({**order})
+
+    # Notify all staff
+    staff_users = await db.users.find({"role": "staff"}, {"_id": 0}).to_list(100)
+    for staff in staff_users:
+        await create_notification(
+            staff['id'],
+            f"New Order {order['orderId']} for {order['partyName']}",
+            "new_order",
+            order['id']
+        )
+    await create_audit_log(user['id'], "ORDER_CREATED", order['id'], f"Created order {order['orderId']}")
+    await manager.broadcast({"type": "ORDER_CREATED", "order": order})
+    return order
+
+
+@api_router.get("/orders/{order_id}")
+async def get_order(order_id: str, user: dict = Depends(get_auth_user)):
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order
+
+
+@api_router.put("/orders/{order_id}")
+async def update_order(order_id: str, req: UpdateOrderRequest, user: dict = Depends(get_auth_user)):
+    require_admin(user)
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    update = {"updatedAt": datetime.now(timezone.utc).isoformat()}
+    if req.partyName is not None:
+        update["partyName"] = req.partyName
+    if req.message is not None:
+        update["message"] = req.message
+    if req.totalParcels is not None:
+        update["totalParcels"] = req.totalParcels
+        total_ready = sum(g.get('readyParcels', 0) for g in order.get('godownDistribution', []))
+        if total_ready >= req.totalParcels:
+            update["readinessStatus"] = "Ready"
+        elif total_ready > 0:
+            update["readinessStatus"] = "Partial Ready"
+        else:
+            update["readinessStatus"] = "Pending"
+    await db.orders.update_one({"id": order_id}, {"$set": update})
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    await create_audit_log(user['id'], "ORDER_UPDATED", order_id, f"Updated order {order['orderId']}")
+    await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
+    return updated
+
+
+@api_router.delete("/orders/{order_id}")
+async def delete_order(order_id: str, user: dict = Depends(get_auth_user)):
+    require_admin(user)
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    await db.orders.delete_one({"id": order_id})
+    await create_audit_log(user['id'], "ORDER_DELETED", order_id, f"Deleted order {order['orderId']}")
+    await manager.broadcast({"type": "ORDER_DELETED", "orderId": order_id})
+    return {"message": "Order deleted"}
+
+
+# ─── Order Status Routes ─────────────────────────────────────────────────────
+
+@api_router.put("/orders/{order_id}/invoice")
+async def toggle_invoice(order_id: str, user: dict = Depends(get_auth_user)):
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    new_val = not order.get('invoiceGiven', False)
+    await db.orders.update_one({"id": order_id}, {"$set": {
+        "invoiceGiven": new_val,
+        "updatedAt": datetime.now(timezone.utc).isoformat()
+    }})
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    await create_audit_log(user['id'], "INVOICE_UPDATED", order_id,
+        f"Invoice {'given' if new_val else 'removed'} for {order['orderId']}")
+    await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
+    return updated
+
+
+@api_router.put("/orders/{order_id}/transport-slip")
+async def toggle_transport_slip(order_id: str, user: dict = Depends(get_auth_user)):
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    new_val = not order.get('transportSlip', False)
+    await db.orders.update_one({"id": order_id}, {"$set": {
+        "transportSlip": new_val,
+        "updatedAt": datetime.now(timezone.utc).isoformat()
+    }})
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    await create_audit_log(user['id'], "TRANSPORT_SLIP_UPDATED", order_id,
+        f"Transport slip {'created' if new_val else 'removed'} for {order['orderId']}")
+    await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
+    return updated
+
+
+@api_router.put("/orders/{order_id}/godown")
+async def update_godown(order_id: str, req: GodownUpdateRequest, user: dict = Depends(get_auth_user)):
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    godown_dist = order.get('godownDistribution', [])
+    found = False
+    for g in godown_dist:
+        if g['godown'] == req.godown:
+            g['readyParcels'] = req.readyParcels
+            found = True
+            break
+    if not found:
+        godown_dist.append({"godown": req.godown, "readyParcels": req.readyParcels})
+    total_ready = sum(g['readyParcels'] for g in godown_dist)
+    if total_ready >= order['totalParcels']:
+        readiness = "Ready"
+    elif total_ready > 0:
+        readiness = "Partial Ready"
+    else:
+        readiness = "Pending"
+    await db.orders.update_one({"id": order_id}, {"$set": {
+        "godownDistribution": godown_dist,
+        "readinessStatus": readiness,
+        "updatedAt": datetime.now(timezone.utc).isoformat()
+    }})
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    await create_audit_log(user['id'], "GODOWN_UPDATED", order_id,
+        f"Godown {req.godown}: {req.readyParcels} parcels for {order['orderId']}")
+    if readiness == "Ready":
+        admins = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
+        for admin_user in admins:
+            await create_notification(admin_user['id'],
+                f"Order {order['orderId']} is fully ready for dispatch!",
+                "order_ready", order['id'])
+    await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
+    return updated
+
+
+@api_router.put("/orders/{order_id}/dispatch")
+async def toggle_dispatch(order_id: str, user: dict = Depends(get_auth_user)):
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    new_val = not order.get('dispatched', False)
+    update_data = {
+        "dispatched": new_val,
+        "updatedAt": datetime.now(timezone.utc).isoformat()
+    }
+    if new_val:
+        update_data["dispatchedAt"] = datetime.now(timezone.utc).isoformat()
+    await db.orders.update_one({"id": order_id}, {"$set": update_data})
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    await create_audit_log(user['id'], "DISPATCH_UPDATED", order_id,
+        f"Order {order['orderId']} {'dispatched' if new_val else 'un-dispatched'}")
+    if new_val:
+        admins = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
+        for admin_user in admins:
+            await create_notification(admin_user['id'],
+                f"Order {order['orderId']} has been dispatched!",
+                "order_dispatched", order['id'])
+    await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
+    return updated
+
+
+# ─── Notification Routes ─────────────────────────────────────────────────────
+
+@api_router.get("/notifications")
+async def get_notifications(user: dict = Depends(get_auth_user)):
+    notifs = await db.notifications.find(
+        {"userId": user['id']}, {"_id": 0}
+    ).sort("createdAt", -1).to_list(100)
+    return notifs
+
+
+@api_router.get("/notifications/unread-count")
+async def get_unread_count(user: dict = Depends(get_auth_user)):
+    count = await db.notifications.count_documents({"userId": user['id'], "read": False})
+    return {"count": count}
+
+
+@api_router.put("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, user: dict = Depends(get_auth_user)):
+    await db.notifications.update_one(
+        {"id": notification_id, "userId": user['id']},
+        {"$set": {"read": True}}
+    )
+    return {"message": "Marked as read"}
+
+
+@api_router.put("/notifications/read-all")
+async def mark_all_read(user: dict = Depends(get_auth_user)):
+    await db.notifications.update_many(
+        {"userId": user['id'], "read": False},
+        {"$set": {"read": True}}
+    )
+    return {"message": "All marked as read"}
+
+
+# ─── Dashboard & Audit ────────────────────────────────────────────────────────
+
+@api_router.get("/dashboard/stats")
+async def get_dashboard_stats(user: dict = Depends(get_auth_user)):
+    total = await db.orders.count_documents({"dispatched": False})
+    ready = await db.orders.count_documents({"readinessStatus": "Ready", "dispatched": False})
+    partial = await db.orders.count_documents({"readinessStatus": "Partial Ready", "dispatched": False})
+    pending = await db.orders.count_documents({"readinessStatus": "Pending", "dispatched": False})
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    dispatched_today = await db.orders.count_documents({
+        "dispatched": True,
+        "dispatchedAt": {"$gte": today_start}
+    })
+    no_invoice = await db.orders.count_documents({"invoiceGiven": False, "dispatched": False})
+    no_transport = await db.orders.count_documents({"transportSlip": False, "dispatched": False})
+    return {
+        "totalActive": total,
+        "ready": ready,
+        "partialReady": partial,
+        "pending": pending,
+        "dispatchedToday": dispatched_today,
+        "noInvoice": no_invoice,
+        "noTransport": no_transport
+    }
+
+
+@api_router.get("/audit-logs")
+async def get_audit_logs(user: dict = Depends(get_auth_user), limit: int = 50):
+    require_admin(user)
+    logs = await db.audit_logs.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+    return logs
+
+
+# ─── WebSocket ────────────────────────────────────────────────────────────────
+
+@api_router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
+    if not token:
+        await websocket.close(code=4001)
+        return
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user = await db.users.find_one({"id": payload['userId']}, {"_id": 0})
+        if not user:
+            await websocket.close(code=4001)
+            return
+    except Exception:
+        await websocket.close(code=4001)
+        return
+    await manager.connect(websocket, user['id'])
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        manager.disconnect(user['id'])
+    except Exception:
+        manager.disconnect(user['id'])
+
+
+# ─── Startup ──────────────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def startup():
+    await db.orders.create_index("orderId")
+    await db.orders.create_index("createdAt")
+    await db.orders.create_index("dispatched")
+    await db.users.create_index("phone", unique=True)
+    await db.notifications.create_index([("userId", 1), ("createdAt", -1)])
+
+    # Seed admin users
+    admin1 = await db.users.find_one({"phone": "+919999999901"})
+    if not admin1:
+        await db.users.insert_one({
+            "id": str(uuid.uuid4()), "phone": "+919999999901",
+            "firstName": "Kishor", "lastName": "Owner",
+            "role": "admin", "createdAt": datetime.now(timezone.utc).isoformat()
+        })
+    admin2 = await db.users.find_one({"phone": "+919999999902"})
+    if not admin2:
+        await db.users.insert_one({
+            "id": str(uuid.uuid4()), "phone": "+919999999902",
+            "firstName": "Father", "lastName": "Admin",
+            "role": "admin", "createdAt": datetime.now(timezone.utc).isoformat()
+        })
+    staff1 = await db.users.find_one({"phone": "+919999999903"})
+    if not staff1:
+        await db.users.insert_one({
+            "id": str(uuid.uuid4()), "phone": "+919999999903",
+            "firstName": "Raju", "lastName": "Worker",
+            "role": "staff", "createdAt": datetime.now(timezone.utc).isoformat()
+        })
+    counter = await db.counters.find_one({"name": "orderId"})
+    if not counter:
+        await db.counters.insert_one({"name": "orderId", "value": 0})
+    logger.info("Database seeded successfully")
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -63,12 +604,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
