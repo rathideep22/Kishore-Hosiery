@@ -6,8 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from '../../../src/utils/api';
-import { Colors, FontSize, Spacing } from '../../../src/constants/theme';
+import { api } from '../../../../src/utils/api';
+import { Colors, FontSize, Spacing } from '../../../../src/constants/theme';
 
 interface OrderItem {
   productId: string;
