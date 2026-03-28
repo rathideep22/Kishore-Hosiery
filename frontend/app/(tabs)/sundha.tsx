@@ -72,9 +72,9 @@ export default function SundhaScreen() {
     // Status filter
     if (statusFilter) {
       filtered = filtered.filter(order => {
-        if (statusFilter === 'pending') return !order.dispatched && order.readinessStatus === 'Pending';
-        if (statusFilter === 'partial') return !order.dispatched && order.readinessStatus === 'Partial Ready';
-        if (statusFilter === 'ready') return !order.dispatched && order.readinessStatus === 'Ready';
+        if (statusFilter === 'pending') return order.readinessStatus === 'Pending';
+        if (statusFilter === 'partial') return order.readinessStatus === 'Partial Ready';
+        if (statusFilter === 'ready') return order.readinessStatus === 'Ready';
         if (statusFilter === 'dispatched') return order.dispatched;
         return true;
       });

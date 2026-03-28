@@ -91,9 +91,9 @@ export default function AllOrdersScreen() {
     // Status filter
     if (status) {
       filtered = filtered.filter(order => {
-        if (status === 'pending') return !order.dispatched && order.readinessStatus === 'Pending';
-        if (status === 'partial') return !order.dispatched && order.readinessStatus === 'Partial Ready';
-        if (status === 'ready') return !order.dispatched && order.readinessStatus === 'Ready';
+        if (status === 'pending') return order.readinessStatus === 'Pending';
+        if (status === 'partial') return order.readinessStatus === 'Partial Ready';
+        if (status === 'ready') return order.readinessStatus === 'Ready';
         if (status === 'dispatched') return order.dispatched;
         return true;
       });
