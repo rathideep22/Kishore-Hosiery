@@ -35,6 +35,11 @@ export default function CatalogScreen() {
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
   const [showAddVariantModal, setShowAddVariantModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [showDeleteVariantModal, setShowDeleteVariantModal] = useState(false);
+  const [deleteVariantData, setDeleteVariantData] = useState<Product | null>(null);
+  const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false);
+  const [deleteCategoryData, setDeleteCategoryData] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Form fields
   const [newCategory, setNewCategory] = useState('');
@@ -133,43 +138,52 @@ export default function CatalogScreen() {
   };
 
   const handleDeleteVariant = (product: Product) => {
-    Alert.alert('Delete Variant', `Delete ${product.alias}?`, [
-      { text: 'Cancel' },
-      {
-        text: 'Delete',
-        onPress: async () => {
-          try {
-            await api.del(`/products/${product.id}`);
-            fetchProducts();
-            Alert.alert('Success', 'Variant deleted');
-          } catch (e: any) {
-            Alert.alert('Error', e.message);
-          }
-        },
-        style: 'destructive',
-      },
-    ]);
+    setDeleteVariantData(product);
+    setShowDeleteVariantModal(true);
+  };
+
+  const confirmDeleteVariant = async () => {
+    if (!deleteVariantData) return;
+    setDeleting(true);
+    try {
+      console.log('Deleting variant:', deleteVariantData.id, deleteVariantData.alias);
+      await api.del(`/products/${deleteVariantData.id}`);
+      console.log('Delete success');
+      await fetchProducts();
+      setShowDeleteVariantModal(false);
+      setDeleteVariantData(null);
+      Alert.alert('Success', `${deleteVariantData.alias} deleted successfully`);
+    } catch (e: any) {
+      console.error('Delete failed:', e);
+      Alert.alert('Error', e.message || 'Failed to delete variant');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleDeleteCategory = (category: string) => {
-    const variantCount = getVariantsInCategory(category).length;
-    Alert.alert('Delete Category', `Delete "${category}" and all ${variantCount} variants?`, [
-      { text: 'Cancel' },
-      {
-        text: 'Delete All',
-        onPress: async () => {
-          try {
-            const categoryProducts = getVariantsInCategory(category);
-            await Promise.all(categoryProducts.map(p => api.del(`/products/${p.id}`)));
-            fetchProducts();
-            Alert.alert('Success', 'Category deleted');
-          } catch (e: any) {
-            Alert.alert('Error', e.message);
-          }
-        },
-        style: 'destructive',
-      },
-    ]);
+    setDeleteCategoryData(category);
+    setShowDeleteCategoryModal(true);
+  };
+
+  const confirmDeleteCategory = async () => {
+    if (!deleteCategoryData) return;
+    setDeleting(true);
+    try {
+      const categoryProducts = getVariantsInCategory(deleteCategoryData);
+      console.log(`Deleting category "${deleteCategoryData}" with ${categoryProducts.length} variants`);
+      await Promise.all(categoryProducts.map(p => api.del(`/products/${p.id}`)));
+      console.log('Category delete success');
+      await fetchProducts();
+      setShowDeleteCategoryModal(false);
+      setDeleteCategoryData(null);
+      Alert.alert('Success', `${deleteCategoryData} and all variants deleted successfully`);
+    } catch (e: any) {
+      console.error('Category delete failed:', e);
+      Alert.alert('Error', e.message || 'Failed to delete category');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const openEditVariantModal = (product: Product) => {
@@ -466,6 +480,84 @@ export default function CatalogScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Delete Variant Confirmation Modal */}
+      {showDeleteVariantModal && deleteVariantData && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.deleteModalContent}>
+            <View style={styles.deleteModalHeader}>
+              <Ionicons name="alert-circle" size={32} color={Colors.danger} />
+              <Text style={styles.deleteModalTitle}>Delete Variant</Text>
+            </View>
+            <Text style={styles.deleteModalMessage}>
+              Are you sure you want to delete this variant?
+            </Text>
+            <Text style={styles.deleteModalInfo}>
+              {deleteVariantData.alias} ({deleteVariantData.size})
+            </Text>
+            <View style={styles.deleteModalButtons}>
+              <TouchableOpacity
+                style={styles.modalBtnNo}
+                onPress={() => {
+                  setShowDeleteVariantModal(false);
+                  setDeleteVariantData(null);
+                }}
+                activeOpacity={0.7}
+                disabled={deleting}
+              >
+                <Text style={styles.modalBtnNoText}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalBtnYes}
+                onPress={confirmDeleteVariant}
+                activeOpacity={0.7}
+                disabled={deleting}
+              >
+                <Text style={styles.modalBtnYesText}>{deleting ? 'Deleting...' : 'Yes, delete'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Delete Category Confirmation Modal */}
+      {showDeleteCategoryModal && deleteCategoryData && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.deleteModalContent}>
+            <View style={styles.deleteModalHeader}>
+              <Ionicons name="alert-circle" size={32} color={Colors.danger} />
+              <Text style={styles.deleteModalTitle}>Delete Category</Text>
+            </View>
+            <Text style={styles.deleteModalMessage}>
+              Are you sure you want to delete this category and all its variants?
+            </Text>
+            <Text style={styles.deleteModalInfo}>
+              {deleteCategoryData} ({getVariantsInCategory(deleteCategoryData).length} variants)
+            </Text>
+            <View style={styles.deleteModalButtons}>
+              <TouchableOpacity
+                style={styles.modalBtnNo}
+                onPress={() => {
+                  setShowDeleteCategoryModal(false);
+                  setDeleteCategoryData(null);
+                }}
+                activeOpacity={0.7}
+                disabled={deleting}
+              >
+                <Text style={styles.modalBtnNoText}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalBtnYes}
+                onPress={confirmDeleteCategory}
+                activeOpacity={0.7}
+                disabled={deleting}
+              >
+                <Text style={styles.modalBtnYesText}>{deleting ? 'Deleting...' : 'Yes, delete all'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -595,4 +687,17 @@ const styles = StyleSheet.create({
   btnText: { fontSize: FontSize.md, fontWeight: '700' },
   btnPrimaryText: { color: '#FFF' },
   btnSecondaryText: { color: Colors.text },
+
+  // Delete Modal
+  modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
+  deleteModalContent: { backgroundColor: Colors.surface, borderRadius: 16, padding: Spacing.lg, width: '80%', maxWidth: 320, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 },
+  deleteModalHeader: { alignItems: 'center', marginBottom: Spacing.md },
+  deleteModalTitle: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.text, marginTop: Spacing.sm },
+  deleteModalMessage: { fontSize: FontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.md, textAlign: 'center' },
+  deleteModalInfo: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.lg, textAlign: 'center' },
+  deleteModalButtons: { flexDirection: 'row', gap: Spacing.md },
+  modalBtnNo: { flex: 1, paddingVertical: Spacing.md, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, alignItems: 'center' },
+  modalBtnNoText: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text },
+  modalBtnYes: { flex: 1, paddingVertical: Spacing.md, backgroundColor: Colors.danger, borderRadius: 8, alignItems: 'center' },
+  modalBtnYesText: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textInverse },
 });
