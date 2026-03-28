@@ -106,29 +106,32 @@ export default function NotificationsScreen() {
         </TouchableOpacity>
       </View>
 
-      {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={Colors.brand} /></View>
-      ) : (
-        <FlatList
-          data={notifications}
-          keyExtractor={item => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications(); }} tintColor={Colors.brand} />}
-          ListEmptyComponent={
-            <View style={styles.center}>
-              <Ionicons name="notifications-off-outline" size={48} color={Colors.border} />
-              <Text style={styles.emptyText}>No notifications</Text>
-            </View>
-          }
-        />
-      )}
+      <View style={styles.notifContainer}>
+        {loading ? (
+          <View style={styles.center}><ActivityIndicator size="large" color={Colors.brand} /></View>
+        ) : (
+          <FlatList
+            data={notifications}
+            keyExtractor={item => item.id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.list}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications(); }} tintColor={Colors.brand} />}
+            ListEmptyComponent={
+              <View style={styles.center}>
+                <Ionicons name="notifications-off-outline" size={48} color={Colors.border} />
+                <Text style={styles.emptyText}>No notifications</Text>
+              </View>
+            }
+          />
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
+  notifContainer: { flex: 1 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, paddingBottom: Spacing.sm },
   title: { fontSize: FontSize.xl, fontWeight: '800', color: Colors.text },
   markAll: { fontSize: FontSize.sm, color: Colors.info, fontWeight: '600' },

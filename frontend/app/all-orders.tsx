@@ -258,20 +258,22 @@ export default function AllOrdersScreen() {
         placeholder="Select Date Range"
       />
 
-      {orders.length === 0 ? (
-        <View style={styles.empty}>
-          <Ionicons name="inbox-outline" size={48} color={Colors.border} />
-          <Text style={styles.emptyText}>No orders found</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={orders}
-          renderItem={renderOrder}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.brand} />}
-        />
-      )}
+      <View style={styles.ordersContainer}>
+        {orders.length === 0 ? (
+          <View style={styles.empty}>
+            <Ionicons name="inbox-outline" size={48} color={Colors.border} />
+            <Text style={styles.emptyText}>No orders found</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={orders}
+            renderItem={renderOrder}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.list}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.brand} />}
+          />
+        )}
+      </View>
     </SafeAreaView>
   );
 }
@@ -279,6 +281,7 @@ export default function AllOrdersScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  ordersContainer: { flex: 1 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: 8 },
   backButton: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   backText: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.brand },
