@@ -398,6 +398,132 @@ export default function CatalogScreen() {
             </View>
           </SafeAreaView>
         </Modal>
+
+        {/* Delete Variant Confirmation Modal */}
+        {showDeleteVariantModal && deleteVariantData && (
+          <View style={styles.modalOverlay}>
+            <View style={styles.deleteModalContent}>
+              {deleteMessage ? (
+                <>
+                  <View style={styles.deleteModalHeader}>
+                    <Ionicons
+                      name={deleteMessage.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
+                      size={32}
+                      color={deleteMessage.type === 'success' ? Colors.success : Colors.danger}
+                    />
+                    <Text style={styles.deleteModalTitle}>
+                      {deleteMessage.type === 'success' ? 'Deleted' : 'Error'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.deleteModalMessage, { color: deleteMessage.type === 'success' ? Colors.success : Colors.danger }]}>
+                    {deleteMessage.text}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.modalBtnYes}
+                    onPress={closeDeleteVariantModal}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.modalBtnYesText}>OK</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <View style={styles.deleteModalHeader}>
+                    <Ionicons name="alert-circle" size={32} color={Colors.danger} />
+                    <Text style={styles.deleteModalTitle}>Delete Variant</Text>
+                  </View>
+                  <Text style={styles.deleteModalMessage}>
+                    Are you sure you want to delete this variant?
+                  </Text>
+                  <Text style={styles.deleteModalInfo}>
+                    {deleteVariantData.alias} ({deleteVariantData.size})
+                  </Text>
+                  <View style={styles.deleteModalButtons}>
+                    <TouchableOpacity
+                      style={styles.modalBtnNo}
+                      onPress={closeDeleteVariantModal}
+                      activeOpacity={0.7}
+                      disabled={deleting}
+                    >
+                      <Text style={styles.modalBtnNoText}>No</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.modalBtnYes}
+                      onPress={confirmDeleteVariant}
+                      activeOpacity={0.7}
+                      disabled={deleting}
+                    >
+                      <Text style={styles.modalBtnYesText}>{deleting ? 'Deleting...' : 'Yes, delete'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Delete Category Confirmation Modal */}
+        {showDeleteCategoryModal && deleteCategoryData && (
+          <View style={styles.modalOverlay}>
+            <View style={styles.deleteModalContent}>
+              {deleteMessage ? (
+                <>
+                  <View style={styles.deleteModalHeader}>
+                    <Ionicons
+                      name={deleteMessage.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
+                      size={32}
+                      color={deleteMessage.type === 'success' ? Colors.success : Colors.danger}
+                    />
+                    <Text style={styles.deleteModalTitle}>
+                      {deleteMessage.type === 'success' ? 'Deleted' : 'Error'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.deleteModalMessage, { color: deleteMessage.type === 'success' ? Colors.success : Colors.danger }]}>
+                    {deleteMessage.text}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.modalBtnYes}
+                    onPress={closeDeleteCategoryModal}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.modalBtnYesText}>OK</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <View style={styles.deleteModalHeader}>
+                    <Ionicons name="alert-circle" size={32} color={Colors.danger} />
+                    <Text style={styles.deleteModalTitle}>Delete Category</Text>
+                  </View>
+                  <Text style={styles.deleteModalMessage}>
+                    Are you sure you want to delete this category and all its variants?
+                  </Text>
+                  <Text style={styles.deleteModalInfo}>
+                    {deleteCategoryData} ({getVariantsInCategory(deleteCategoryData).length} variants)
+                  </Text>
+                  <View style={styles.deleteModalButtons}>
+                    <TouchableOpacity
+                      style={styles.modalBtnNo}
+                      onPress={closeDeleteCategoryModal}
+                      activeOpacity={0.7}
+                      disabled={deleting}
+                    >
+                      <Text style={styles.modalBtnNoText}>No</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.modalBtnYes}
+                      onPress={confirmDeleteCategory}
+                      activeOpacity={0.7}
+                      disabled={deleting}
+                    >
+                      <Text style={styles.modalBtnYesText}>{deleting ? 'Deleting...' : 'Yes, delete all'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        )}
       </SafeAreaView>
     );
   }
@@ -495,131 +621,6 @@ export default function CatalogScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* Delete Variant Confirmation Modal */}
-      {showDeleteVariantModal && deleteVariantData && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.deleteModalContent}>
-            {deleteMessage ? (
-              <>
-                <View style={styles.deleteModalHeader}>
-                  <Ionicons
-                    name={deleteMessage.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
-                    size={32}
-                    color={deleteMessage.type === 'success' ? Colors.success : Colors.danger}
-                  />
-                  <Text style={styles.deleteModalTitle}>
-                    {deleteMessage.type === 'success' ? 'Deleted' : 'Error'}
-                  </Text>
-                </View>
-                <Text style={[styles.deleteModalMessage, { color: deleteMessage.type === 'success' ? Colors.success : Colors.danger }]}>
-                  {deleteMessage.text}
-                </Text>
-                <TouchableOpacity
-                  style={styles.modalBtnYes}
-                  onPress={closeDeleteVariantModal}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.modalBtnYesText}>OK</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <View style={styles.deleteModalHeader}>
-                  <Ionicons name="alert-circle" size={32} color={Colors.danger} />
-                  <Text style={styles.deleteModalTitle}>Delete Variant</Text>
-                </View>
-                <Text style={styles.deleteModalMessage}>
-                  Are you sure you want to delete this variant?
-                </Text>
-                <Text style={styles.deleteModalInfo}>
-                  {deleteVariantData.alias} ({deleteVariantData.size})
-                </Text>
-                <View style={styles.deleteModalButtons}>
-                  <TouchableOpacity
-                    style={styles.modalBtnNo}
-                    onPress={closeDeleteVariantModal}
-                    activeOpacity={0.7}
-                    disabled={deleting}
-                  >
-                    <Text style={styles.modalBtnNoText}>No</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.modalBtnYes}
-                    onPress={confirmDeleteVariant}
-                    activeOpacity={0.7}
-                    disabled={deleting}
-                  >
-                    <Text style={styles.modalBtnYesText}>{deleting ? 'Deleting...' : 'Yes, delete'}</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* Delete Category Confirmation Modal */}
-      {showDeleteCategoryModal && deleteCategoryData && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.deleteModalContent}>
-            {deleteMessage ? (
-              <>
-                <View style={styles.deleteModalHeader}>
-                  <Ionicons
-                    name={deleteMessage.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
-                    size={32}
-                    color={deleteMessage.type === 'success' ? Colors.success : Colors.danger}
-                  />
-                  <Text style={styles.deleteModalTitle}>
-                    {deleteMessage.type === 'success' ? 'Deleted' : 'Error'}
-                  </Text>
-                </View>
-                <Text style={[styles.deleteModalMessage, { color: deleteMessage.type === 'success' ? Colors.success : Colors.danger }]}>
-                  {deleteMessage.text}
-                </Text>
-                <TouchableOpacity
-                  style={styles.modalBtnYes}
-                  onPress={closeDeleteCategoryModal}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.modalBtnYesText}>OK</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <View style={styles.deleteModalHeader}>
-                  <Ionicons name="alert-circle" size={32} color={Colors.danger} />
-                  <Text style={styles.deleteModalTitle}>Delete Category</Text>
-                </View>
-                <Text style={styles.deleteModalMessage}>
-                  Are you sure you want to delete this category and all its variants?
-                </Text>
-                <Text style={styles.deleteModalInfo}>
-                  {deleteCategoryData} ({getVariantsInCategory(deleteCategoryData).length} variants)
-                </Text>
-                <View style={styles.deleteModalButtons}>
-                  <TouchableOpacity
-                    style={styles.modalBtnNo}
-                    onPress={closeDeleteCategoryModal}
-                    activeOpacity={0.7}
-                    disabled={deleting}
-                  >
-                    <Text style={styles.modalBtnNoText}>No</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.modalBtnYes}
-                    onPress={confirmDeleteCategory}
-                    activeOpacity={0.7}
-                    disabled={deleting}
-                  >
-                    <Text style={styles.modalBtnYesText}>{deleting ? 'Deleting...' : 'Yes, delete all'}</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      )}
     </SafeAreaView>
   );
 }
