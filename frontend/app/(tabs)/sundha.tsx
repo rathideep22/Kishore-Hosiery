@@ -203,22 +203,21 @@ export default function SundhaScreen() {
         />
       )}
 
-      <View style={styles.ordersContainer}>
-        {orders.length === 0 ? (
-          <View style={styles.empty}>
-            <Ionicons name="inbox-outline" size={48} color={Colors.border} />
-            <Text style={styles.emptyText}>No orders for Sundha gowdown</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={orders}
-            renderItem={renderOrder}
-            keyExtractor={item => item.id}
-            contentContainerStyle={styles.list}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.brand} />}
-          />
-        )}
-      </View>
+      {orders.length === 0 ? (
+        <View style={styles.empty}>
+          <Ionicons name="inbox-outline" size={48} color={Colors.border} />
+          <Text style={styles.emptyText}>No orders for Sundha gowdown</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={orders}
+          renderItem={renderOrder}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.list}
+          style={{ flex: 1 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.brand} />}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -226,7 +225,6 @@ export default function SundhaScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  ordersContainer: { flex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border },
   title: { fontSize: FontSize.xl, fontWeight: '800', color: Colors.text },
   subtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: Spacing.xs },

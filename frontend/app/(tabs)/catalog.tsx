@@ -310,22 +310,20 @@ export default function CatalogScreen() {
         </View>
 
         {/* Variants List */}
-        <View style={styles.variantsContainer}>
-          {variants.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="cube-outline" size={48} color={Colors.textSecondary} />
-              <Text style={styles.emptyText}>No variants in this category</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={variants}
-              renderItem={renderVariantCard}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.variantsList}
-              scrollEnabled
-            />
-          )}
-        </View>
+        {variants.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="cube-outline" size={48} color={Colors.textSecondary} />
+            <Text style={styles.emptyText}>No variants in this category</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={variants}
+            renderItem={renderVariantCard}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.variantsList}
+            style={{ flex: 1 }}
+          />
+        )}
 
         {/* Add Variant Modal */}
         <Modal visible={showAddVariantModal} transparent animationType="slide">
@@ -581,8 +579,7 @@ export default function CatalogScreen() {
           renderItem={renderCategoryCard}
           keyExtractor={(item) => item}
           contentContainerStyle={styles.categoriesList}
-          scrollEnabled
-          style={styles.flatListContainer}
+          style={{ flex: 1 }}
         />
       )}
 
@@ -682,11 +679,7 @@ const styles = StyleSheet.create({
   },
 
   // Categories
-  flatListContainer: { flex: 1 },
   categoriesList: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
-
-  // Variants
-  variantsContainer: { flex: 1 },
   categoryCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',

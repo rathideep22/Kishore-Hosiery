@@ -178,31 +178,29 @@ export default function DispatchScreen() {
         </View>
       </View>
 
-      <View style={styles.dispatchContainer}>
-        {orders.length === 0 ? (
-          <View style={styles.empty}>
-            <Ionicons name="checkmark-done-outline" size={48} color={Colors.success} />
-            <Text style={styles.emptyText}>No orders to dispatch</Text>
-            <TouchableOpacity
-              style={styles.backButtonEmpty}
-              onPress={() => router.back()}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.backButtonEmptyText}>Go Back</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
+      {orders.length === 0 ? (
+        <View style={styles.empty}>
+          <Ionicons name="checkmark-done-outline" size={48} color={Colors.success} />
+          <Text style={styles.emptyText}>No orders to dispatch</Text>
+          <TouchableOpacity
+            style={styles.backButtonEmpty}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.backButtonEmptyText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
           <FlatList
             data={orders}
             renderItem={renderOrder}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.listContent}
+            style={{ flex: 1 }}
           />
-        )}
-      </View>
 
-      {orders.length > 0 && (
-        <View style={styles.footer}>
+          <View style={styles.footer}>
             <TouchableOpacity
               style={styles.backBtn}
               onPress={() => router.back()}
@@ -228,6 +226,7 @@ export default function DispatchScreen() {
               )}
             </TouchableOpacity>
           </View>
+        </>
       )}
     </SafeAreaView>
   );
@@ -236,7 +235,6 @@ export default function DispatchScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  dispatchContainer: { flex: 1 },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border, gap: Spacing.md },
   backButtonTop: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   headerCenter: { flex: 1 },

@@ -221,25 +221,24 @@ export default function UsersScreen() {
           </View>
         )}
 
-        <View style={styles.usersContainer}>
-          {loading ? (
-            <View style={styles.center}><ActivityIndicator size="large" color={Colors.brand} /></View>
-          ) : filteredUsers.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={48} color={Colors.textSecondary} />
-              <Text style={styles.emptyText}>{search ? 'No users found' : 'No users yet'}</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={filteredUsers}
-              keyExtractor={item => item.id}
-              renderItem={renderUser}
-              contentContainerStyle={styles.listContent}
-              scrollEnabled={!showForm}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchUsers(); }} tintColor={Colors.brand} />}
-            />
-          )}
-        </View>
+        {loading ? (
+          <View style={styles.center}><ActivityIndicator size="large" color={Colors.brand} /></View>
+        ) : filteredUsers.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="people-outline" size={48} color={Colors.textSecondary} />
+            <Text style={styles.emptyText}>{search ? 'No users found' : 'No users yet'}</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredUsers}
+            keyExtractor={item => item.id}
+            renderItem={renderUser}
+            contentContainerStyle={styles.listContent}
+            style={{ flex: 1 }}
+            scrollEnabled={!showForm}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchUsers(); }} tintColor={Colors.brand} />}
+          />
+        )}
       </KeyboardAvoidingView>
 
       {/* Delete Confirmation Modal */}
@@ -284,7 +283,6 @@ export default function UsersScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
-  usersContainer: { flex: 1 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border },
   title: { fontSize: FontSize.xl, fontWeight: '800', color: Colors.text },
   subtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
