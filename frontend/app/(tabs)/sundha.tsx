@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, ScrollView, TextInput, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
@@ -21,6 +22,12 @@ const FILTERS = [
   { key: 'dispatched', label: 'Dispatched' },
 ];
 
+interface OrderItem {
+  productId: string;
+  quantity: number;
+  fulfillment?: (number | null)[];
+}
+
 interface Order {
   id: string;
   orderId: string;
@@ -30,6 +37,7 @@ interface Order {
   dispatched: boolean;
   invoiceGiven: boolean;
   transportSlip: boolean;
+  items?: OrderItem[];
   godownDistribution: { godown: string; readyParcels: number }[];
   createdAt: string;
 }
@@ -94,6 +102,13 @@ export default function SundhaScreen() {
     if (wsMessage?.type?.startsWith('ORDER_')) fetchOrders();
   }, [wsMessage]);
 
+  // Refresh orders when screen comes into focus (returning from order detail)
+  useFocusEffect(
+    useCallback(() => {
+      fetchOrders();
+    }, [fetchOrders])
+  );
+
   const onRefresh = () => { setRefreshing(true); fetchOrders(); };
 
   const getStatusColor = (order: Order) => {
@@ -104,8 +119,12 @@ export default function SundhaScreen() {
   };
 
   const getReadySummary = (order: Order) => {
-    const total = order.godownDistribution?.reduce((s, g) => s + g.readyParcels, 0) || 0;
-    return `${total}/${order.totalParcels}`;
+    // Calculate from items' fulfillment data
+    const fulfilled = (order.items || []).reduce((sum, item) => {
+      const itemFulfilled = (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
+      return sum + itemFulfilled;
+    }, 0);
+    return `${fulfilled}/${order.totalParcels}`;
   };
 
   const renderOrder = ({ item }: { item: Order }) => (
@@ -116,30 +135,13 @@ export default function SundhaScreen() {
       activeOpacity={0.7}
     >
       <View style={styles.cardTop}>
-        <Text style={styles.orderId}>{item.orderId}</Text>
+        <Text style={styles.partyName}>{item.partyName}</Text>
         <View style={[styles.statusDot, { backgroundColor: getStatusColor(item) }]} />
       </View>
-      <Text style={styles.partyName}>{item.partyName}</Text>
       <View style={styles.cardMeta}>
         <View style={styles.metaItem}>
           <Ionicons name="cube-outline" size={14} color={Colors.textSecondary} />
           <Text style={styles.metaText}>{getReadySummary(item)} parcels</Text>
-        </View>
-        <View style={styles.metaItem}>
-          {item.invoiceGiven ? (
-            <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
-          ) : (
-            <Ionicons name="close-circle" size={14} color={Colors.danger} />
-          )}
-          <Text style={styles.metaText}>Invoice</Text>
-        </View>
-        <View style={styles.metaItem}>
-          {item.transportSlip ? (
-            <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
-          ) : (
-            <Ionicons name="close-circle" size={14} color={Colors.danger} />
-          )}
-          <Text style={styles.metaText}>Transport</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -162,7 +164,14 @@ export default function SundhaScreen() {
           <Text style={styles.title}>Sundha</Text>
           <Text style={styles.subtitle}>Gowdown Orders</Text>
         </View>
-        <Ionicons name="warehouse" size={32} color={Colors.brand} />
+        <TouchableOpacity
+          style={styles.dispatchBtn}
+          onPress={() => router.push('/dispatch?godown=Sundha')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="send" size={18} color="#fff" />
+          <Text style={styles.dispatchText}>Dispatch</Text>
+        </TouchableOpacity>
       </View>
 
       <SearchInput
@@ -199,9 +208,11 @@ export default function SundhaScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border },
   title: { fontSize: FontSize.xl, fontWeight: '800', color: Colors.text },
   subtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: Spacing.xs },
+  dispatchBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.brand, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: 8, gap: Spacing.xs },
+  dispatchText: { fontSize: FontSize.sm, fontWeight: '700', color: '#fff' },
   list: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.md },
   card: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, padding: Spacing.lg, marginBottom: Spacing.sm, minHeight: 100 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },

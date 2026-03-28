@@ -2,6 +2,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisco
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from bson.objectid import ObjectId
 import os
 import logging
 from pathlib import Path
@@ -90,6 +91,10 @@ class CreateOrderRequest(BaseModel):
     items: Optional[List[OrderProductItem]] = []
     totalParcels: Optional[int] = None
 
+class ParcelFulfillmentRequest(BaseModel):
+    productId: str
+    parcelIndex: int
+    weight: float
 
 # ─── WebSocket Manager ───────────────────────────────────────────────────────
 
@@ -452,7 +457,62 @@ async def toggle_dispatch(order_id: str, user: dict = Depends(get_auth_user)):
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+
     new_val = not order.get('dispatched', False)
+
+    # If dispatching (setting to True), check for partial fulfillment
+    if new_val:
+        items = order.get('items', [])
+        remaining_items = []
+
+        # Calculate remaining parcels for each item
+        for item in items:
+            fulfilled = sum(1 for w in item.get('fulfillment', []) if w is not None)
+            remaining = item.get('quantity', 0) - fulfilled
+
+            # Only add to remaining if there are unfulfilled parcels
+            if remaining > 0:
+                remaining_items.append({
+                    "productId": item['productId'],
+                    "alias": item['alias'],
+                    "category": item['category'],
+                    "size": item['size'],
+                    "printName": item['printName'],
+                    "quantity": remaining,
+                    "rate": item.get('rate')
+                })
+
+        # If there are remaining items, create a new order
+        if remaining_items:
+            new_order_id = f"{order['orderId']}-REM-{datetime.now(timezone.utc).strftime('%s')}"
+            new_order = {
+                "id": new_order_id,
+                "orderId": new_order_id,
+                "partyName": order['partyName'],
+                "location": order.get('location', ''),
+                "godown": order['godown'],
+                "message": f"Remaining parcels from {order['orderId']}",
+                "totalParcels": sum(item['quantity'] for item in remaining_items),
+                "items": remaining_items,
+                "readinessStatus": "Pending",
+                "dispatched": False,
+                "dispatchedAt": None,
+                "createdByName": "System",
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+                "godownDistribution": []
+            }
+
+            # Insert the new order
+            await db.orders.insert_one(new_order)
+
+            # Notify admins about the new order
+            admins = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
+            for admin_user in admins:
+                await create_notification(admin_user['id'],
+                    f"System created remainder order {new_order_id} for {order['partyName']} (from {order['orderId']})",
+                    "order_created", new_order_id)
+
     update_data = {
         "dispatched": new_val,
         "updatedAt": datetime.now(timezone.utc).isoformat()
@@ -469,6 +529,82 @@ async def toggle_dispatch(order_id: str, user: dict = Depends(get_auth_user)):
             await create_notification(admin_user['id'],
                 f"Order {order['orderId']} has been dispatched!",
                 "order_dispatched", order['id'])
+    await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
+    return updated
+
+
+@api_router.put("/orders/{order_id}/fulfill")
+async def fulfill_parcel(order_id: str, req: ParcelFulfillmentRequest, user: dict = Depends(get_auth_user)):
+    logger.info(f"Fulfill request: order_id={order_id}, productId={req.productId}, parcelIndex={req.parcelIndex}, weight={req.weight}")
+
+    # Try to find order by id field
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        # Fallback: try orderId
+        order = await db.orders.find_one({"orderId": order_id}, {"_id": 0})
+
+    if not order:
+        # Final fallback: try _id as ObjectId
+        try:
+            order = await db.orders.find_one({"_id": ObjectId(order_id)}, {"_id": 0})
+        except:
+            logger.warning(f"Could not parse {order_id} as ObjectId")
+
+    if not order:
+        logger.error(f"Order not found with any field matching: {order_id}")
+        raise HTTPException(status_code=404, detail=f"Order not found")
+
+    items = order.get('items', [])
+    updated_items = []
+    item_found = False
+
+    for item in items:
+        if item['productId'] == req.productId:
+            item_found = True
+            # Initialize fulfillment array if not present
+            if 'fulfillment' not in item:
+                item['fulfillment'] = [None] * item['quantity']
+
+            # Ensure array has enough slots
+            while len(item['fulfillment']) < item['quantity']:
+                item['fulfillment'].append(None)
+
+            # Update parcel weight
+            if req.parcelIndex < len(item['fulfillment']):
+                item['fulfillment'][req.parcelIndex] = req.weight
+
+        updated_items.append(item)
+
+    if not item_found:
+        logger.error(f"Product {req.productId} not found in order {order_id}. Available products: {[item.get('productId') for item in items]}")
+        raise HTTPException(status_code=404, detail=f"Product {req.productId} not found in order")
+
+    # Calculate status based on fulfillment
+    total_parcels = order.get('totalParcels', 0)
+    fulfilled_count = 0
+    for item in updated_items:
+        fulfilled = sum(1 for w in item.get('fulfillment', []) if w is not None)
+        fulfilled_count += fulfilled
+
+    new_status = "Pending"
+    if fulfilled_count == total_parcels:
+        new_status = "Ready"
+    elif fulfilled_count > 0:
+        new_status = "Partial Ready"
+
+    # Update order with new items and status
+    await db.orders.update_one(
+        {"id": order_id},
+        {"$set": {
+            "items": updated_items,
+            "readinessStatus": new_status,
+            "updatedAt": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    await create_audit_log(user['id'], "PARCEL_FULFILLED", order_id,
+        f"Parcel {req.parcelIndex + 1} for {req.productId} fulfilled with {req.weight}kg")
     await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
     return updated
 

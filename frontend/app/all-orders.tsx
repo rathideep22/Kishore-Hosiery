@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, ScrollView, useWindowDimensions,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, ScrollView, useWindowDimensions, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../src/context/AuthContext';
 import { api } from '../src/utils/api';
@@ -28,6 +29,12 @@ const GODOWN_FILTERS = [
   { key: 'Lal-Shivnagar', label: 'Lal-Shivnagar' },
 ];
 
+interface OrderItem {
+  productId: string;
+  quantity: number;
+  fulfillment?: (number | null)[];
+}
+
 interface Order {
   id: string;
   orderId: string;
@@ -36,6 +43,7 @@ interface Order {
   readinessStatus: string;
   dispatched: boolean;
   godown: string;
+  items?: OrderItem[];
   godownDistribution: { godown: string; readyParcels: number }[];
   createdAt: string;
 }
@@ -127,7 +135,15 @@ export default function AllOrdersScreen() {
     if (wsMessage?.type?.startsWith('ORDER_')) fetchOrders();
   }, [wsMessage]);
 
+  // Refresh orders when screen comes into focus (returning from order detail)
+  useFocusEffect(
+    useCallback(() => {
+      fetchOrders();
+    }, [fetchOrders])
+  );
+
   const onRefresh = () => { setRefreshing(true); fetchOrders(); };
+
 
   const getStatusColor = (order: Order) => {
     if (order.dispatched) return Colors.textSecondary;
@@ -137,8 +153,12 @@ export default function AllOrdersScreen() {
   };
 
   const getReadySummary = (order: Order) => {
-    const total = order.godownDistribution?.reduce((s, g) => s + g.readyParcels, 0) || 0;
-    return `${total}/${order.totalParcels}`;
+    // Calculate from items' fulfillment data
+    const fulfilled = (order.items || []).reduce((sum, item) => {
+      const itemFulfilled = (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
+      return sum + itemFulfilled;
+    }, 0);
+    return `${fulfilled}/${order.totalParcels}`;
   };
 
   const renderOrder = ({ item }: { item: Order }) => (
@@ -149,17 +169,9 @@ export default function AllOrdersScreen() {
       activeOpacity={0.7}
     >
       <View style={styles.cardTop}>
-        <View style={styles.cardTopLeft}>
-          <Text style={styles.orderId}>{item.orderId}</Text>
-          <View style={[styles.godownBadge, { backgroundColor: item.godown === 'Sundha' ? Colors.info + '20' : Colors.success + '20' }]}>
-            <Text style={[styles.godownText, { color: item.godown === 'Sundha' ? Colors.info : Colors.success }]}>
-              {item.godown}
-            </Text>
-          </View>
-        </View>
+        <Text style={styles.partyName}>{item.partyName}</Text>
         <View style={[styles.statusDot, { backgroundColor: getStatusColor(item) }]} />
       </View>
-      <Text style={styles.partyName}>{item.partyName}</Text>
       <View style={[styles.cardMeta, isSmallPhone && { gap: Spacing.sm }]}>
         <View style={styles.metaItem}>
           <Ionicons name="cube-outline" size={14} color={Colors.textSecondary} />
@@ -181,16 +193,26 @@ export default function AllOrdersScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.back()}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="chevron-back" size={isSmallPhone ? 20 : 24} color={Colors.brand} />
-        <Text style={[styles.backText, isSmallPhone && { fontSize: FontSize.xs }]}>
-          {isSmallPhone ? 'Back' : 'Back to Dashboard'}
-        </Text>
-      </TouchableOpacity>
+      <View style={styles.headerRow}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chevron-back" size={isSmallPhone ? 20 : 24} color={Colors.brand} />
+          <Text style={[styles.backText, isSmallPhone && { fontSize: FontSize.xs }]}>
+            {isSmallPhone ? 'Back' : 'Back to Dashboard'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.dispatchHeaderBtn}
+          onPress={() => router.push('/dispatch?godown=All')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="send" size={18} color="#fff" />
+          <Text style={styles.dispatchHeaderText}>Dispatch</Text>
+        </TouchableOpacity>
+      </View>
 
       <SearchInput
         placeholder="Search order ID or party..."
@@ -249,8 +271,11 @@ export default function AllOrdersScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  backButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: 8, gap: 6 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: 8 },
+  backButton: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   backText: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.brand },
+  dispatchHeaderBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.brand, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: 8, gap: Spacing.xs },
+  dispatchHeaderText: { fontSize: FontSize.sm, fontWeight: '700', color: '#fff' },
   filtersScroll: { maxHeight: 60 },
   filtersList: { paddingHorizontal: Spacing.lg, gap: 6, paddingVertical: 6 },
   list: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.md },

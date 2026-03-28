@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
 import { SearchInput } from '../../src/components/SearchInput';
+import { OrderFulfillment } from '../../src/components/OrderFulfillment';
 import { useResponsive } from '../../src/utils/responsive';
 import { getResponsiveTheme } from '../../src/constants/responsiveTheme';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
@@ -85,9 +86,12 @@ export default function OrderDetailScreen() {
 
   const fetchOrder = useCallback(async () => {
     try {
+      console.log('Fetching order with id:', id, 'type:', typeof id);
       const data = await api.get(`/orders/${id}`);
+      console.log('Order fetched:', data.id, data.orderId);
       setOrder(data);
     } catch (e: any) {
+      console.error('Error fetching order:', e);
       Alert.alert('Error', e.message);
     } finally {
       setLoading(false);
@@ -458,28 +462,67 @@ export default function OrderDetailScreen() {
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView
-          style={styles.scroll}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchOrder(); }} tintColor={Colors.brand} />}
-        >
-          {/* Order Info */}
-          <View style={styles.section}>
-            <Text style={styles.partyName}>{order.partyName}</Text>
-            <Text style={styles.locationText}>{order.location}</Text>
-            <View style={[styles.statusBadge, { backgroundColor: (order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
-              <Text style={[styles.statusBadgeText, { color: order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
-                {order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
-              </Text>
+        {/* STAFF FULFILLMENT VIEW */}
+        {!isAdmin ? (
+          <View style={{ flex: 1 }}>
+            {/* Compact Order Header */}
+            <View style={styles.compactHeader}>
+              <View style={styles.compactHeaderLeft}>
+                <Text style={styles.compactPartyName}>{order.partyName}</Text>
+                <Text style={styles.compactLocation}>{order.location}</Text>
+              </View>
+              <View style={[styles.compactStatusBadge, { backgroundColor: (order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
+                <Text style={[styles.compactStatusText, { color: order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
+                  {order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
+                </Text>
+              </View>
             </View>
-          </View>
 
-          {/* Message */}
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>ORDER MESSAGE</Text>
-            <View style={styles.messageBox}>
-              <Text style={styles.messageText}>{order.message}</Text>
-            </View>
+            {/* Message Collapsible */}
+            {order.message && (
+              <View style={styles.compactMessage}>
+                <Ionicons name="chatbubble-outline" size={16} color={Colors.textSecondary} />
+                <Text style={styles.compactMessageText} numberOfLines={1}>{order.message}</Text>
+              </View>
+            )}
+
+            {/* Fulfillment Component */}
+            {order.items && order.items.length > 0 && (
+              <OrderFulfillment
+                items={order.items}
+                orderId={order.id}
+                totalParcels={order.totalParcels}
+                onUpdate={(updatedItems) => {
+                  // Update order items immediately from API response
+                  setOrder(prev => ({ ...prev, items: updatedItems }));
+                }}
+              />
+            )}
           </View>
+        ) : (
+          /* ADMIN VIEW */
+          <ScrollView
+            style={styles.scroll}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchOrder(); }} tintColor={Colors.brand} />}
+          >
+            {/* Order Info */}
+            <View style={styles.section}>
+              <Text style={styles.partyName}>{order.partyName}</Text>
+              <Text style={styles.locationText}>{order.location}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: (order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
+                <Text style={[styles.statusBadgeText, { color: order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
+                  {order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
+                </Text>
+              </View>
+            </View>
+
+            {/* Message */}
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>ORDER MESSAGE</Text>
+              <View style={styles.messageBox}>
+                <Text style={styles.messageText}>{order.message}</Text>
+              </View>
+            </View>
 
           {/* Items - Grouped by Category */}
           {order.items && order.items.length > 0 && (
@@ -576,12 +619,13 @@ export default function OrderDetailScreen() {
           </View>
 
           {/* Meta */}
-          <View style={styles.meta}>
-            <Text style={styles.metaText}>Created by {order.createdByName}</Text>
-            <Text style={styles.metaText}>{new Date(order.createdAt).toLocaleString()}</Text>
-          </View>
-          <View style={{ height: 40 }} />
-        </ScrollView>
+            <View style={styles.meta}>
+              <Text style={styles.metaText}>Created by {order.createdByName}</Text>
+              <Text style={styles.metaText}>{new Date(order.createdAt).toLocaleString()}</Text>
+            </View>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        )}
       </KeyboardAvoidingView>
 
       {/* Godown Modal */}
@@ -977,4 +1021,24 @@ const styles = StyleSheet.create({
   variantItemInfo: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flex: 1 },
   emptyText: { fontSize: FontSize.sm, color: Colors.textSecondary, fontStyle: 'italic', paddingVertical: Spacing.lg },
   categoryRateTag: { fontSize: FontSize.xs, color: Colors.brand, fontWeight: '700', marginTop: Spacing.xs, marginBottom: Spacing.md, backgroundColor: Colors.brand + '15', paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: 4, alignSelf: 'flex-start' },
+
+  // Compact Staff View Header
+  compactHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    gap: Spacing.md,
+  },
+  compactHeaderLeft: { flex: 1 },
+  compactPartyName: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.text },
+  compactLocation: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: Spacing.xs, fontWeight: '500' },
+  compactStatusBadge: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: 8, minWidth: 90, alignItems: 'center' },
+  compactStatusText: { fontSize: FontSize.xs, fontWeight: '700', letterSpacing: 0.5 },
+  compactMessage: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, backgroundColor: Colors.bg, borderBottomWidth: 1, borderBottomColor: Colors.border, gap: Spacing.sm },
+  compactMessageText: { fontSize: FontSize.xs, color: Colors.textSecondary, flex: 1 },
 });
