@@ -114,22 +114,6 @@ export default function OrderDetailScreen() {
     }, [fetchOrder])
   );
 
-  const toggleDispatch = async () => {
-    const action = order?.dispatched ? 'un-dispatch' : 'dispatch';
-    Alert.alert('Confirm', `Are you sure you want to ${action} this order?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Yes', onPress: async () => {
-          setActionLoading('dispatch');
-          try {
-            const data = await api.put(`/orders/${id}/dispatch`);
-            setOrder(data);
-          } catch (e: any) { Alert.alert('Error', e.message); }
-          finally { setActionLoading(''); }
-        },
-      },
-    ]);
-  };
 
   const saveEdit = async () => {
     setActionLoading('edit');
@@ -559,27 +543,6 @@ export default function OrderDetailScreen() {
           )}
 
 
-          {/* Dispatch */}
-          <View style={styles.section}>
-            <TouchableOpacity
-              testID="dispatch-btn"
-              style={[styles.dispatchBtn, order.dispatched && styles.dispatchBtnDone]}
-              onPress={toggleDispatch}
-              disabled={actionLoading === 'dispatch'}
-              activeOpacity={0.7}
-            >
-              {actionLoading === 'dispatch' ? (
-                <ActivityIndicator color="#FFF" />
-              ) : (
-                <>
-                  <Ionicons name={order.dispatched ? 'close-circle' : 'send'} size={22} color="#FFF" />
-                  <Text style={styles.dispatchText}>
-                    {order.dispatched ? 'Mark as Not Dispatched' : 'Mark as Dispatched'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
 
           {/* Meta */}
             <View style={styles.meta}>
@@ -878,9 +841,6 @@ const styles = StyleSheet.create({
   emptyGodown: { fontSize: FontSize.sm, color: Colors.textSecondary, fontStyle: 'italic', textAlign: 'center', paddingVertical: Spacing.lg },
   pendingBox: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, backgroundColor: Colors.warning + '12', borderRadius: 8, padding: Spacing.md, marginTop: Spacing.sm },
   pendingText: { fontSize: FontSize.sm, color: Colors.warning, fontWeight: '600' },
-  dispatchBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.success, borderRadius: 12, height: 56, gap: Spacing.sm },
-  dispatchBtnDone: { backgroundColor: Colors.textSecondary },
-  dispatchText: { color: '#FFF', fontSize: FontSize.lg, fontWeight: '700' },
   meta: { padding: Spacing.xl, alignItems: 'center' },
   metaText: { fontSize: FontSize.xs, color: Colors.textSecondary, marginBottom: 4 },
   // Modal
