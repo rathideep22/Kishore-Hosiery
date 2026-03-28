@@ -13,13 +13,16 @@ import jwt
 import asyncio
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+env_path = ROOT_DIR / '.env'
+load_dotenv(env_path, override=True)
 
-mongo_url = os.environ['MONGO_URL']
+mongo_url = os.environ.get('MONGODB_URL')
+if not mongo_url:
+    raise ValueError("MONGODB_URL not found in environment. Please set it in .env or as an environment variable.")
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[os.environ.get('DB_NAME', 'kishore_hosiery')]
 
-JWT_SECRET = os.environ['JWT_SECRET']
+JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production')
 JWT_ALGORITHM = 'HS256'
 MOCK_OTP = '1234'
 
@@ -58,6 +61,32 @@ class UpdateOrderRequest(BaseModel):
 class GodownUpdateRequest(BaseModel):
     godown: str
     readyParcels: int
+
+class OrderProductItem(BaseModel):
+    productId: str
+    alias: str
+    category: str
+    size: str
+    printName: str
+    quantity: int
+
+class CreateProductRequest(BaseModel):
+    category: str
+    size: str
+    printName: str
+    alias: str
+
+class UpdateProductRequest(BaseModel):
+    category: Optional[str] = None
+    size: Optional[str] = None
+    printName: Optional[str] = None
+    alias: Optional[str] = None
+
+class CreateOrderRequest(BaseModel):
+    partyName: str
+    message: str
+    items: Optional[List[OrderProductItem]] = []
+    totalParcels: Optional[int] = None
 
 
 # ─── WebSocket Manager ───────────────────────────────────────────────────────
@@ -280,12 +309,15 @@ async def get_orders(
 async def create_order(req: CreateOrderRequest, user: dict = Depends(get_auth_user)):
     require_admin(user)
     order_num = await get_next_order_id()
+    items = [item.dict() for item in req.items] if req.items else []
+    total_parcels = sum(item.quantity for item in req.items) if req.items else req.totalParcels or 0
     order = {
         "id": str(uuid.uuid4()),
         "orderId": f"KH-{order_num:04d}",
         "partyName": req.partyName,
         "message": req.message,
-        "totalParcels": req.totalParcels,
+        "items": items,
+        "totalParcels": total_parcels,
         "invoiceGiven": False,
         "transportSlip": False,
         "godownDistribution": [],
@@ -461,6 +493,94 @@ async def toggle_dispatch(order_id: str, user: dict = Depends(get_auth_user)):
     return updated
 
 
+# ─── Product Routes ───────────────────────────────────────────────────────────
+
+@api_router.get("/products/categories")
+async def get_categories(user: dict = Depends(get_auth_user)):
+    categories = await db.products.distinct("category")
+    return sorted(categories)
+
+
+@api_router.get("/products")
+async def get_products(
+    user: dict = Depends(get_auth_user),
+    category: Optional[str] = None,
+    search: Optional[str] = None
+):
+    query = {}
+    if category:
+        query["category"] = category
+    if search:
+        query["$or"] = [
+            {"category": {"$regex": search, "$options": "i"}},
+            {"size": {"$regex": search, "$options": "i"}},
+            {"printName": {"$regex": search, "$options": "i"}},
+            {"alias": {"$regex": search, "$options": "i"}}
+        ]
+    products = await db.products.find(query, {"_id": 0}).sort("category", 1).to_list(1000)
+    return products
+
+
+@api_router.post("/products")
+async def create_product(req: CreateProductRequest, user: dict = Depends(get_auth_user)):
+    require_admin(user)
+    existing = await db.products.find_one({"alias": req.alias})
+    if existing:
+        raise HTTPException(status_code=400, detail="Product alias already exists")
+    product = {
+        "id": str(uuid.uuid4()),
+        "category": req.category,
+        "size": req.size,
+        "printName": req.printName,
+        "alias": req.alias,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "updatedAt": datetime.now(timezone.utc).isoformat()
+    }
+    await db.products.insert_one({**product})
+    await create_audit_log(user['id'], "PRODUCT_CREATED", None, f"Created product {req.alias}")
+    return product
+
+
+@api_router.get("/products/{product_id}")
+async def get_product(product_id: str, user: dict = Depends(get_auth_user)):
+    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
+
+
+@api_router.put("/products/{product_id}")
+async def update_product(product_id: str, req: UpdateProductRequest, user: dict = Depends(get_auth_user)):
+    require_admin(user)
+    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    update = {"updatedAt": datetime.now(timezone.utc).isoformat()}
+    if req.category is not None:
+        update["category"] = req.category
+    if req.size is not None:
+        update["size"] = req.size
+    if req.printName is not None:
+        update["printName"] = req.printName
+    if req.alias is not None:
+        update["alias"] = req.alias
+    await db.products.update_one({"id": product_id}, {"$set": update})
+    updated = await db.products.find_one({"id": product_id}, {"_id": 0})
+    await create_audit_log(user['id'], "PRODUCT_UPDATED", None, f"Updated product {product['alias']}")
+    return updated
+
+
+@api_router.delete("/products/{product_id}")
+async def delete_product(product_id: str, user: dict = Depends(get_auth_user)):
+    require_admin(user)
+    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    await db.products.delete_one({"id": product_id})
+    await create_audit_log(user['id'], "PRODUCT_DELETED", None, f"Deleted product {product['alias']}")
+    return {"message": "Product deleted"}
+
+
 # ─── Notification Routes ─────────────────────────────────────────────────────
 
 @api_router.get("/notifications")
@@ -565,6 +685,64 @@ async def startup():
     await db.orders.create_index("dispatched")
     await db.users.create_index("phone", unique=True)
     await db.notifications.create_index([("userId", 1), ("createdAt", -1)])
+    await db.products.create_index("category")
+    await db.products.create_index("alias", unique=True)
+
+    # Seed products
+    products_data = [
+        # 160 GSM SUPER STRONG YELLOW
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "12-9", "printName": "0 - FILLER 12-9 160 GSM-Y-SUPER STRONG", "alias": "18501"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "12-12", "printName": "0 - FILLER 12-12 160 GSM-Y-SUPER STRONG", "alias": "18502"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "12-15", "printName": "0 - FILLER 12-15 160 GSM-Y-SUPER STRONG", "alias": "18503"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "12-18", "printName": "0 - FILLER 12-18 160 GSM-Y-SUPER STRONG", "alias": "18504"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "12-24", "printName": "0 - FILLER 12-24 160 GSM-Y-SUPER STRONG", "alias": "18505"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "15-15", "printName": "0 - FILLER 15-15 160 GSM-Y-SUPER STRONG", "alias": "18506"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "15-18", "printName": "0 - FILLER 15-18 160 GSM-Y-SUPER STRONG", "alias": "18507"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "18-18", "printName": "0 - FILLER 18-18 160 GSM-Y-SUPER STRONG", "alias": "18508"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "15-21", "printName": "0 - FILLER 15-21 160 GSM-Y-SUPER STRONG", "alias": "18509"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "20-21", "printName": "0 - FILLER 20-21 160 GSM-Y-SUPER STRONG", "alias": "18511"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "18-24", "printName": "0 - FILLER 18-24 160 GSM-Y-SUPER STRONG", "alias": "18512"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "24-24", "printName": "0 - FILLER 24-24 160 GSM-Y-SUPER STRONG", "alias": "18513"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "18-30", "printName": "0 - FILLER 18-30 160 GSM-Y-SUPER STRONG", "alias": "18514"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "24-30", "printName": "0 - FILLER 24-30 160 GSM-Y-SUPER STRONG", "alias": "18515"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "30-30", "printName": "0 - FILLER 30-30 160 GSM-Y-SUPER STRONG", "alias": "18516"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "18-36", "printName": "0 - FILLER 18-36 160 GSM-Y-SUPER STRONG", "alias": "18521"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "36-36", "printName": "0 - FILLER 36-36 160 GSM-Y-SUPER STRONG", "alias": "18522"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "60-60", "printName": "0 - FILLER 60-60 160 GSM-Y-SUPER STRONG", "alias": "18523"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "30-36", "printName": "0 - FILLER 30-36 160 GSM-Y-SUPER STRONG", "alias": "18531"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "24-36", "printName": "0 - FILLER 24-36 160 GSM-Y-SUPER STRONG", "alias": "18530"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "40-40", "printName": "0 - FILLER 40-40 160 GSM-Y-SUPER STRONG", "alias": "18520"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "30-40", "printName": "0 - FILLER 30-40 160 GSM-Y-SUPER STRONG", "alias": "18518"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "24-40", "printName": "0 - FILLER 24-40 160 GSM-Y-SUPER STRONG", "alias": "18532"},
+        {"category": "160 GSM SUPER STRONG YELLOW", "size": "30-50", "printName": "0 - FILLER 30-50 160 GSM-Y-SUPER STRONG", "alias": "18533"},
+        # 6-3.5 BLACK KOHINOOR (sample)
+        {"category": "6-3.5 BLACK KOHINOOR", "size": "12-9", "printName": "6-3.5 KOH BLACK 12-9", "alias": "8051"},
+        {"category": "6-3.5 BLACK KOHINOOR", "size": "12-12", "printName": "6-3.5 KOH BLACK 12-12", "alias": "8052"},
+        {"category": "6-3.5 BLACK KOHINOOR", "size": "12-15", "printName": "6-3.5 KOH BLACK 12-15", "alias": "8053"},
+        {"category": "6-3.5 BLACK KOHINOOR", "size": "12-18", "printName": "6-3.5 KOH BLACK 12-18", "alias": "8054"},
+        {"category": "6-3.5 BLACK KOHINOOR", "size": "12-24", "printName": "6-3.5 KOH BLACK 12-24", "alias": "8055"},
+        {"category": "6-3.5 BLACK KOHINOOR", "size": "15-15", "printName": "6-3.5 KOH BLACK 15-15", "alias": "8056"},
+        {"category": "6-3.5 BLACK KOHINOOR", "size": "15-18", "printName": "6-3.5 KOH BLACK 15-18", "alias": "8057"},
+        {"category": "6-3.5 BLACK KOHINOOR", "size": "18-18", "printName": "6-3.5 KOH BLACK 18-18", "alias": "8058"},
+        {"category": "6-3.5 BLACK KOHINOOR", "size": "15-21", "printName": "6-3.5 KOH BLACK 15-21", "alias": "8059"},
+        {"category": "6-3.5 BLACK KOHINOOR", "size": "15-24", "printName": "6-3.5 KOH BLACK 15-24", "alias": "8060"},
+    ]
+
+    for prod in products_data:
+        existing = await db.products.find_one({"alias": prod["alias"]})
+        if not existing:
+            product_doc = {
+                "id": str(uuid.uuid4()),
+                "category": prod["category"],
+                "size": prod["size"],
+                "printName": prod["printName"],
+                "alias": prod["alias"],
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "updatedAt": datetime.now(timezone.utc).isoformat()
+            }
+            await db.products.insert_one(product_doc)
+
+    logger.info("Products seeded successfully")
 
     # Seed admin users
     admin1 = await db.users.find_one({"phone": "+919999999901"})
@@ -587,6 +765,13 @@ async def startup():
             "id": str(uuid.uuid4()), "phone": "+919999999903",
             "firstName": "Raju", "lastName": "Worker",
             "role": "staff", "createdAt": datetime.now(timezone.utc).isoformat()
+        })
+    admin3 = await db.users.find_one({"phone": "+919909667752"})
+    if not admin3:
+        await db.users.insert_one({
+            "id": str(uuid.uuid4()), "phone": "+919909667752",
+            "firstName": "Admin", "lastName": "User",
+            "role": "admin", "createdAt": datetime.now(timezone.utc).isoformat()
         })
     counter = await db.counters.find_one({"name": "orderId"})
     if not counter:

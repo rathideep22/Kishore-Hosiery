@@ -11,11 +11,13 @@ import { api } from '../../src/utils/api';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
 
 interface GodownEntry { godown: string; readyParcels: number; }
+interface OrderItem { productId: string; alias: string; category: string; size: string; printName: string; quantity: number; }
 interface Order {
   id: string; orderId: string; partyName: string; message: string;
   totalParcels: number; invoiceGiven: boolean; transportSlip: boolean;
   godownDistribution: GodownEntry[]; readinessStatus: string;
   dispatched: boolean; dispatchedAt: string | null;
+  items?: OrderItem[];
   createdByName: string; createdAt: string; updatedAt: string;
 }
 
@@ -231,6 +233,25 @@ export default function OrderDetailScreen() {
             </View>
           </View>
 
+          {/* Items */}
+          {order.items && order.items.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>SELECTED PRODUCTS</Text>
+              {order.items.map((item, idx) => (
+                <View key={idx} style={styles.itemRow}>
+                  <View style={styles.itemInfo}>
+                    <Text style={styles.itemAlias}>{item.alias}</Text>
+                    <Text style={styles.itemSize}>{item.size}</Text>
+                    <Text style={styles.itemPrintName} numberOfLines={2}>{item.printName}</Text>
+                  </View>
+                  <View style={styles.itemQuantity}>
+                    <Text style={styles.itemQtyBadge}>{item.quantity}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
           {/* Status Toggles */}
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>STATUS CHECKLIST</Text>
@@ -423,4 +444,12 @@ const styles = StyleSheet.create({
   cancelText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textSecondary },
   saveBtn: { flex: 1, backgroundColor: Colors.brand, borderRadius: 12, height: 48, justifyContent: 'center', alignItems: 'center' },
   saveText: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textInverse },
+  // Items
+  itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.sm },
+  itemInfo: { flex: 1 },
+  itemAlias: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
+  itemSize: { fontSize: FontSize.sm, color: Colors.textSecondary, marginVertical: 2 },
+  itemPrintName: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: Spacing.xs },
+  itemQuantity: { backgroundColor: Colors.brand, borderRadius: 20, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, minWidth: 50, alignItems: 'center' },
+  itemQtyBadge: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textInverse },
 });
