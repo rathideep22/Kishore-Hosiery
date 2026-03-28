@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert,
-  ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform, Modal, FlatList,
+  ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform, Modal, FlatList, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,6 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
 import { SearchInput } from '../../src/components/SearchInput';
+import { useResponsive } from '../../src/utils/responsive';
+import { getResponsiveTheme } from '../../src/constants/responsiveTheme';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
 
 interface GodownEntry { godown: string; readyParcels: number; }

@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { Colors, FontSize } from '../../src/constants/theme';
@@ -15,22 +15,24 @@ function Badge({ count }: { count: number }) {
 
 export default function TabLayout() {
   const { user, unreadCount } = useAuth();
+  const { width } = useWindowDimensions();
   const isAdmin = user?.role === 'admin';
+  const hideLabels = width < 390;
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [styles.tabBar, hideLabels && { height: 50, paddingBottom: 0 }],
         tabBarActiveTintColor: Colors.brand,
         tabBarInactiveTintColor: Colors.textSecondary,
-        tabBarLabelStyle: styles.tabLabel,
+        tabBarLabelStyle: [styles.tabLabel, hideLabels && { display: 'none' }],
       }}
     >
       <Tabs.Screen
         name="dashboard"
         options={{
-          title: 'Dashboard',
+          title: hideLabels ? '' : 'Dashboard',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="grid-outline" size={size} color={color} />
           ),
@@ -39,7 +41,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="catalog"
         options={{
-          title: 'Catalog',
+          title: hideLabels ? '' : 'Catalog',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="list-outline" size={size} color={color} />
           ),
@@ -48,7 +50,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="sundha"
         options={{
-          title: 'Sundha',
+          title: hideLabels ? '' : 'Sundha',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
@@ -57,7 +59,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="lal-shivnagar"
         options={{
-          title: 'Lal-Shiv',
+          title: hideLabels ? '' : 'Lal-Shiv',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="storefront" size={size} color={color} />
           ),
@@ -66,7 +68,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="users"
         options={{
-          title: 'Users',
+          title: hideLabels ? '' : 'Users',
           href: isAdmin ? '/(tabs)/users' : null,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" size={size} color={color} />
@@ -76,7 +78,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="notifications"
         options={{
-          title: 'Alerts',
+          title: hideLabels ? '' : 'Alerts',
           tabBarIcon: ({ color, size }) => (
             <View>
               <Ionicons name="notifications-outline" size={size} color={color} />

@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal, FlatList,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal, FlatList, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../src/utils/api';
 import { SearchInput } from '../../src/components/SearchInput';
+import { useResponsive } from '../../src/utils/responsive';
+import { getResponsiveTheme } from '../../src/constants/responsiveTheme';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
 
 interface Product {
@@ -607,13 +609,13 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border },
   backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.text },
-  scroll: { flex: 1, padding: Spacing.xl },
-  label: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.sm, marginTop: Spacing.lg },
-  subLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.sm, marginTop: Spacing.md },
-  input: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: Spacing.lg, height: 48, fontSize: FontSize.md, color: Colors.text, backgroundColor: Colors.bg, marginBottom: Spacing.md },
+  scroll: { flex: 1, padding: Spacing.lg },
+  label: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.sm, marginTop: Spacing.md },
+  subLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.sm, marginTop: Spacing.sm },
+  input: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: Spacing.lg, height: 48, minHeight: 48, fontSize: FontSize.md, color: Colors.text, backgroundColor: Colors.bg, marginBottom: Spacing.md },
   messageInput: { height: 100, paddingTop: Spacing.md },
   gowdownBoxes: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.lg },
-  gowdownBox: { flex: 1, backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.border, borderRadius: 12, paddingVertical: Spacing.md, paddingHorizontal: Spacing.sm, alignItems: 'center', gap: Spacing.xs },
+  gowdownBox: { flex: 1, backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.border, borderRadius: 12, paddingVertical: Spacing.md, paddingHorizontal: Spacing.sm, alignItems: 'center', gap: Spacing.xs, minHeight: 70, justifyContent: 'center' },
   gowdownBoxSelected: { borderColor: Colors.brand, borderWidth: 2, backgroundColor: Colors.brand + '08' },
   gowdownBoxText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, textAlign: 'center' },
   gowdownBoxTextSelected: { color: Colors.brand, fontWeight: '700' },

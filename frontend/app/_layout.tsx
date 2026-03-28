@@ -14,7 +14,7 @@ function RootNavigator() {
     const inTabs = segments[0] === '(tabs)';
     if (!user && inTabs) {
       router.replace('/');
-    } else if (user && !inTabs && segments[0] !== 'order') {
+    } else if (user && !inTabs && segments[0] !== 'order' && segments[0] !== 'all-orders') {
       router.replace('/(tabs)/dashboard');
     }
   }, [user, isLoading, segments]);
@@ -33,6 +33,7 @@ function RootNavigator() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="all-orders" options={{ presentation: 'card' }} />
         <Stack.Screen name="order/[id]" options={{ presentation: 'card' }} />
         <Stack.Screen name="order/create" options={{ presentation: 'card' }} />
       </Stack>

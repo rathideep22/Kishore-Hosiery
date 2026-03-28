@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  Modal, Alert, ActivityIndicator, ScrollView,
+  Modal, Alert, ActivityIndicator, ScrollView, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
 import { SearchInput } from '../../src/components/SearchInput';
+import { useResponsive } from '../../src/utils/responsive';
+import { getResponsiveTheme } from '../../src/constants/responsiveTheme';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
 
 interface Product {
@@ -29,6 +31,8 @@ interface CategoryGroup {
 export default function CatalogScreen() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const { width } = useResponsive();
+  const theme = getResponsiveTheme(width);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<CategoryGroup[]>([]);
@@ -38,11 +42,14 @@ export default function CatalogScreen() {
   // Modals
   const [showAddVariantModal, setShowAddVariantModal] = useState(false);
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [showEditVariantModal, setShowEditVariantModal] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('');
 
   // Form fields
   const [variantForm, setVariantForm] = useState({ size: '', alias: '', printName: '' });
   const [categoryForm, setCategoryForm] = useState('');
+  const [editingVariant, setEditingVariant] = useState<Product | null>(null);
+  const [editVariantForm, setEditVariantForm] = useState({ size: '', alias: '', printName: '' });
 
   useEffect(() => {
     fetchProducts();
@@ -141,6 +148,35 @@ export default function CatalogScreen() {
       setShowAddCategoryModal(false);
       fetchProducts();
       Alert.alert('Success', 'Category created with default variant');
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  const handleEditVariant = (variant: Product) => {
+    setEditingVariant(variant);
+    setEditVariantForm({ size: variant.size, alias: variant.alias, printName: variant.printName });
+    setShowEditVariantModal(true);
+  };
+
+  const handleSaveEditVariant = async () => {
+    if (!editVariantForm.size.trim() || !editVariantForm.alias.trim() || !editVariantForm.printName.trim()) {
+      Alert.alert('Missing Fields', 'Please fill all fields');
+      return;
+    }
+
+    try {
+      await api.put(`/products/${editingVariant!.id}`, {
+        category: editingVariant!.category,
+        size: editVariantForm.size,
+        alias: editVariantForm.alias,
+        printName: editVariantForm.printName,
+      });
+      setShowEditVariantModal(false);
+      setEditingVariant(null);
+      setEditVariantForm({ size: '', alias: '', printName: '' });
+      fetchProducts();
+      Alert.alert('Success', 'Variant updated');
     } catch (e: any) {
       Alert.alert('Error', e.message);
     }
@@ -279,13 +315,22 @@ export default function CatalogScreen() {
                         <Text style={styles.variantAlias}>{variant.alias}</Text>
                       </View>
                       {isAdmin && (
-                        <TouchableOpacity
-                          onPress={() => handleDeleteVariant(variant.id, variant.size)}
-                          style={styles.deleteBtn}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="trash" size={18} color={Colors.danger} />
-                        </TouchableOpacity>
+                        <View style={styles.variantActions}>
+                          <TouchableOpacity
+                            onPress={() => handleEditVariant(variant)}
+                            style={styles.actionBtn}
+                            activeOpacity={0.7}
+                          >
+                            <Ionicons name="create" size={18} color={Colors.brand} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleDeleteVariant(variant.id, variant.size)}
+                            style={styles.actionBtn}
+                            activeOpacity={0.7}
+                          >
+                            <Ionicons name="trash" size={18} color={Colors.danger} />
+                          </TouchableOpacity>
+                        </View>
                       )}
                     </View>
                   ))}
@@ -397,6 +442,66 @@ export default function CatalogScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Edit Variant Modal */}
+      <Modal visible={showEditVariantModal} transparent animationType="slide">
+        <SafeAreaView style={styles.modal}>
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Variant</Text>
+              <TouchableOpacity onPress={() => setShowEditVariantModal(false)} activeOpacity={0.7}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>SIZE</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. 12-12"
+              placeholderTextColor={Colors.textSecondary}
+              value={editVariantForm.size}
+              onChangeText={v => setEditVariantForm({ ...editVariantForm, size: v })}
+            />
+
+            <Text style={styles.label}>ALIAS CODE</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. 18502"
+              placeholderTextColor={Colors.textSecondary}
+              value={editVariantForm.alias}
+              onChangeText={v => setEditVariantForm({ ...editVariantForm, alias: v })}
+            />
+
+            <Text style={styles.label}>PRINT NAME</Text>
+            <TextInput
+              style={[styles.input, styles.multilineInput]}
+              placeholder="e.g. 0 - FILLER 12-12 160 GSM-Y"
+              placeholderTextColor={Colors.textSecondary}
+              value={editVariantForm.printName}
+              onChangeText={v => setEditVariantForm({ ...editVariantForm, printName: v })}
+              multiline
+              textAlignVertical="top"
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                onPress={() => setShowEditVariantModal(false)}
+                style={[styles.btn, styles.btnSecondary]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.btnText, styles.btnSecondaryText]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSaveEditVariant}
+                style={[styles.btn, styles.btnPrimary]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.btnText, styles.btnPrimaryText]}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -413,10 +518,10 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   title: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.text },
-  listContent: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
+  listContent: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md, paddingTop: Spacing.xs },
 
   // Category Styles
-  categorySection: { marginBottom: Spacing.lg },
+  categorySection: { marginBottom: Spacing.sm },
   categoryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -426,29 +531,33 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     borderRadius: 12,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.sm,
+    minHeight: 50,
   },
-  categoryLeft: { flexDirection: 'row', alignItems: 'flex-start', flex: 1, gap: Spacing.md },
-  categoryTitle: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, flex: 1, flexWrap: 'wrap' },
-  categoryCount: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
-  categoryActions: { flexDirection: 'row', gap: Spacing.sm },
-  actionBtn: { padding: Spacing.sm },
+  categoryLeft: { flexDirection: 'row', alignItems: 'flex-start', flex: 1, gap: Spacing.sm },
+  categoryTitle: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, flex: 1, flexWrap: 'wrap' },
+  categoryCount: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 },
+  categoryActions: { flexDirection: 'row', gap: 4 },
+  actionBtn: { padding: 6, minWidth: 30, justifyContent: 'center', alignItems: 'center' },
 
   // Variant Styles
-  variantsList: { backgroundColor: Colors.bgSecondary, borderRadius: 8, overflow: 'hidden', marginTop: Spacing.sm },
+  variantsList: { backgroundColor: Colors.bgSecondary, borderRadius: 8, overflow: 'hidden', marginTop: 4 },
   variantRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.sm,
+    paddingRight: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+    minHeight: 42,
   },
   variantInfo: { flex: 1 },
-  variantSize: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text },
-  variantAlias: { fontSize: FontSize.xs, color: Colors.brand, fontWeight: '700', marginTop: 2 },
-  deleteBtn: { padding: Spacing.sm },
+  variantSize: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text },
+  variantAlias: { fontSize: 10, color: Colors.brand, fontWeight: '700', marginTop: 2 },
+  variantActions: { flexDirection: 'row', gap: 4 },
+  deleteBtn: { padding: 6, minWidth: 30, justifyContent: 'center', alignItems: 'center' },
 
   // Empty State
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xxl },

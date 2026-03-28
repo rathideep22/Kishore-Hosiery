@@ -1,12 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, ScrollView, TextInput, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
+import { SearchInput } from '../../src/components/SearchInput';
+import { FilterDropdown } from '../../src/components/FilterDropdown';
+import { useResponsive } from '../../src/utils/responsive';
+import { getResponsiveTheme } from '../../src/constants/responsiveTheme';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
 
 const FILTERS = [
@@ -33,24 +37,59 @@ interface Order {
 export default function LalShivnagarScreen() {
   const { user, wsMessage } = useAuth();
   const router = useRouter();
+  const { width } = useResponsive();
+  const theme = getResponsiveTheme(width);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const fetchOrders = useCallback(async () => {
     try {
       let path = '/orders?godown=Lal-Shivnagar';
-      if (filter) path += `&status=${filter}`;
       const data = await api.get(path);
-      setOrders(data);
+      setAllOrders(data);
+      filterOrders(data, filter, search);
     } catch {} finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [filter]);
+  }, []);
 
-  useEffect(() => { fetchOrders(); }, [filter]);
+  const filterOrders = (allData: Order[], statusFilter: string, searchQuery: string) => {
+    let filtered = allData;
+
+    // Status filter
+    if (statusFilter) {
+      filtered = filtered.filter(order => {
+        if (statusFilter === 'pending') return !order.dispatched && order.readinessStatus === 'Pending';
+        if (statusFilter === 'partial') return !order.dispatched && order.readinessStatus === 'Partial Ready';
+        if (statusFilter === 'ready') return !order.dispatched && order.readinessStatus === 'Ready';
+        if (statusFilter === 'dispatched') return order.dispatched;
+        return true;
+      });
+    }
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(order =>
+        order.orderId.toLowerCase().includes(q) ||
+        order.partyName.toLowerCase().includes(q)
+      );
+    }
+
+    setOrders(filtered);
+  };
+
+  useEffect(() => { fetchOrders(); }, []);
+
+  useEffect(() => {
+    filterOrders(allOrders, filter, search);
+  }, [filter, search]);
+
   useEffect(() => {
     if (wsMessage?.type?.startsWith('ORDER_')) fetchOrders();
   }, [wsMessage]);
@@ -72,7 +111,7 @@ export default function LalShivnagarScreen() {
   const renderOrder = ({ item }: { item: Order }) => (
     <TouchableOpacity
       testID={`order-card-${item.orderId}`}
-      style={styles.card}
+      style={[styles.card, width < 430 && { marginHorizontal: Spacing.sm }]}
       onPress={() => router.push(`/order/${item.id}`)}
       activeOpacity={0.7}
     >
@@ -126,20 +165,18 @@ export default function LalShivnagarScreen() {
         <Ionicons name="building" size={32} color={Colors.brand} />
       </View>
 
-      <View style={styles.filterScroll}>
-        {FILTERS.map(f => (
-          <TouchableOpacity
-            key={f.key}
-            style={[styles.filterBtn, filter === f.key && styles.filterBtnActive]}
-            onPress={() => setFilter(f.key)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <SearchInput
+        placeholder="Search order ID or party..."
+        value={search}
+        onChangeText={setSearch}
+      />
+
+      <FilterDropdown
+        options={FILTERS}
+        selectedKey={filter}
+        onSelect={setFilter}
+        placeholder="Filter by Status"
+      />
 
       {orders.length === 0 ? (
         <View style={styles.empty}>
@@ -165,13 +202,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border },
   title: { fontSize: FontSize.xl, fontWeight: '800', color: Colors.text },
   subtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: Spacing.xs },
-  filterScroll: { flexDirection: 'row', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, gap: Spacing.sm },
-  filterBtn: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: 20, backgroundColor: Colors.bgSecondary, borderWidth: 1, borderColor: Colors.border },
-  filterBtnActive: { backgroundColor: Colors.brand, borderColor: Colors.brand },
-  filterText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.textSecondary },
-  filterTextActive: { color: Colors.textInverse },
   list: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.md },
-  card: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, padding: Spacing.lg, marginBottom: Spacing.sm },
+  card: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, padding: Spacing.lg, marginBottom: Spacing.sm, minHeight: 100 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
   orderId: { fontSize: FontSize.md, fontWeight: '700', color: Colors.brand },
   statusDot: { width: 10, height: 10, borderRadius: 5 },
