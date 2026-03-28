@@ -4,7 +4,6 @@ import {
   ActivityIndicator, Dimensions, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { api } from '../utils/api';
 import { Colors, FontSize, Spacing } from '../constants/theme';
 
@@ -41,11 +40,11 @@ export function OrderFulfillment({
   onUpdate: (updatedItems: OrderItem[]) => void;
   isAdmin?: boolean;
 }) {
-  const router = useRouter();
   const [saving, setSaving] = useState<string | null>(null);
   const [inputValues, setInputValues] = useState<Record<string, string>>({}); // Local input state for unsynced typing
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({}); // Track which categories are expanded
   const [expandedVariants, setExpandedVariants] = useState<Record<string, boolean>>({}); // Track which variants are expanded
+  const [tableViewCategory, setTableViewCategory] = useState<string | null>(null); // Track which category is in table view
   const scrollViewRef = useRef<ScrollView>(null);
   const debounceTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
   const lastSubmittedRef = useRef<Record<string, string>>({}); // Track last submitted value
@@ -333,17 +332,58 @@ export function OrderFulfillment({
                   <Text style={styles.categoryCount}>{categoryItems.length} variant(s)</Text>
                   {isAdmin && (
                     <TouchableOpacity
-                      onPress={() => router.push(`/order/${orderId}/category/${category}`)}
-                      style={styles.viewDetailsButton}
+                      onPress={() => setTableViewCategory(tableViewCategory === category ? null : category)}
+                      style={[styles.viewDetailsButton, tableViewCategory === category && styles.viewDetailsButtonActive]}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Ionicons name="eye" size={16} color={Colors.brand} />
+                      <Ionicons name={tableViewCategory === category ? "list" : "list-outline"} size={16} color={Colors.brand} />
                     </TouchableOpacity>
                   )}
                 </View>
               </TouchableOpacity>
 
-              {isCategoryExpanded && categoryItems.map(item => {
+              {/* Table View for Admin */}
+              {isCategoryExpanded && isAdmin && tableViewCategory === category && (
+                <View style={styles.tableViewContainer}>
+                  {/* Table Header */}
+                  <View style={styles.tableRowHeader}>
+                    <Text style={[styles.tableCell, { flex: 1 }]}>Variant</Text>
+                    <Text style={[styles.tableCell, { width: 50, textAlign: 'center' }]}>Qty</Text>
+                    <Text style={[styles.tableCell, { width: 50, textAlign: 'center' }]}>Done</Text>
+                    <Text style={[styles.tableCell, { flex: 1, textAlign: 'center' }]}>Weights</Text>
+                  </View>
+
+                  {/* Table Body */}
+                  {categoryItems.map((item) => {
+                    const fulfilled = (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
+                    const weights = (item.fulfillment || [])
+                      .map((w, idx) => w ? `${w.toFixed(2)}` : null)
+                      .filter(w => w !== null)
+                      .join(', ');
+                    const status = getVariantStatus(item);
+
+                    return (
+                      <View key={item.productId} style={styles.tableRowBody}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.tableCellText}>{item.alias}</Text>
+                          <Text style={styles.tableCellSmall}>{item.size}</Text>
+                        </View>
+                        <Text style={[styles.tableCell, { width: 50, textAlign: 'center', color: Colors.text }]}>{item.quantity}</Text>
+                        <Text style={[styles.tableCell, { width: 50, textAlign: 'center', color: Colors.text }]}>{fulfilled}</Text>
+                        <View style={[styles.tableCell, { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+                          <Text style={[styles.tableCellSmall, { flex: 1 }]}>{weights || '-'}</Text>
+                          <View style={[styles.statusBadgeSmall, { backgroundColor: status.color + '20' }]}>
+                            <Text style={[styles.statusBadgeText, { color: status.color }]}>{status.label}</Text>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Collapsible Variants View */}
+              {isCategoryExpanded && !(isAdmin && tableViewCategory === category) && categoryItems.map(item => {
                 const variantStatus = getVariantStatus(item);
                 const isVariantExpanded = expandedVariants[item.productId];
 
@@ -599,6 +639,59 @@ const styles = StyleSheet.create({
     padding: Spacing.xs,
     borderRadius: 6,
     backgroundColor: Colors.brand + '15',
+  },
+  viewDetailsButtonActive: {
+    backgroundColor: Colors.brand + '30',
+  },
+
+  // Table View Styles
+  tableViewContainer: {
+    backgroundColor: Colors.card,
+    borderRadius: 8,
+    marginHorizontal: Spacing.sm,
+    marginVertical: Spacing.sm,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  tableRowHeader: {
+    flexDirection: 'row',
+    backgroundColor: Colors.brand + '15',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  tableRowBody: {
+    flexDirection: 'row',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    alignItems: 'center',
+  },
+  tableCell: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+    color: Colors.brand,
+  },
+  tableCellText: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  tableCellSmall: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+  },
+  statusBadgeSmall: {
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  statusBadgeText: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
   },
 
   // Variant Card
