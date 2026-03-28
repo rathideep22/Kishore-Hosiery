@@ -55,6 +55,7 @@ export default function OrderDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
+  const [tableViewCategory, setTableViewCategory] = useState<string | null>(null);
 
 
   // Edit modal
@@ -522,20 +523,81 @@ export default function OrderDetailScreen() {
                   return acc;
                 }, {});
 
-                return Object.entries(groupedByCategory).map(([category, items]) => (
-                  <View key={category} style={styles.categoryCard}>
-                    <Text style={styles.categoryName}>{category}</Text>
-                    <View style={styles.variantsList}>
-                      {items.map((item, idx) => (
-                        <View key={idx} style={styles.variantItem}>
-                          <Text style={styles.variantSize}>{item.size}</Text>
-                          <Text style={styles.variantQtyCenter}>{item.quantity}x</Text>
-                          {item.rate && <Text style={styles.variantRate}>₹{item.rate}</Text>}
+                return Object.entries(groupedByCategory).map(([category, items]) => {
+                  const isTableView = tableViewCategory === category;
+                  return (
+                    <View key={category} style={styles.categoryCard}>
+                      <TouchableOpacity
+                        style={styles.categoryHeader}
+                        onPress={() => isAdmin && setTableViewCategory(isTableView ? null : category)}
+                        disabled={!isAdmin}
+                        activeOpacity={isAdmin ? 0.7 : 1}
+                      >
+                        <Text style={styles.categoryName}>{category}</Text>
+                        {isAdmin && (
+                          <Ionicons
+                            name={isTableView ? "list" : "list-outline"}
+                            size={18}
+                            color={Colors.brand}
+                          />
+                        )}
+                      </TouchableOpacity>
+
+                      {/* Table View */}
+                      {isAdmin && isTableView ? (
+                        <View style={styles.tableViewContainer}>
+                          <View style={styles.tableRowHeader}>
+                            <Text style={[styles.tableCell, { flex: 1 }]}>Variant</Text>
+                            <Text style={[styles.tableCell, { width: 50, textAlign: 'center' }]}>Qty</Text>
+                            <Text style={[styles.tableCell, { width: 50, textAlign: 'center' }]}>Done</Text>
+                            <Text style={[styles.tableCell, { flex: 1, textAlign: 'center' }]}>Weights</Text>
+                          </View>
+                          {items.map((item, idx) => {
+                            const fulfilled = (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
+                            const weights = (item.fulfillment || [])
+                              .map((w, _) => w ? `${w.toFixed(2)}` : null)
+                              .filter(w => w !== null)
+                              .join(', ');
+                            const percentage = item.quantity > 0 ? (fulfilled / item.quantity) * 100 : 0;
+                            let statusColor = Colors.danger;
+                            if (percentage === 100) statusColor = Colors.success;
+                            else if (percentage > 0) statusColor = Colors.warning;
+
+                            return (
+                              <View key={idx} style={styles.tableRowBody}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.tableCellText}>{item.alias || item.size}</Text>
+                                  <Text style={styles.tableCellSmall}>{item.size}</Text>
+                                </View>
+                                <Text style={[styles.tableCell, { width: 50, textAlign: 'center', color: Colors.text }]}>{item.quantity}</Text>
+                                <Text style={[styles.tableCell, { width: 50, textAlign: 'center', color: Colors.text }]}>{fulfilled}</Text>
+                                <View style={[styles.tableCell, { flex: 1, justifyContent: 'space-between', alignItems: 'center', flexDirection: 'row' }]}>
+                                  <Text style={[styles.tableCellSmall, { flex: 1 }]}>{weights || '-'}</Text>
+                                  <View style={[styles.statusBadgeSmall, { backgroundColor: statusColor + '20' }]}>
+                                    <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+                                      {percentage === 0 ? 'PENDING' : percentage === 100 ? 'READY' : 'PARTIAL'}
+                                    </Text>
+                                  </View>
+                                </View>
+                              </View>
+                            );
+                          })}
                         </View>
-                      ))}
+                      ) : (
+                        /* Variants List View */
+                        <View style={styles.variantsList}>
+                          {items.map((item, idx) => (
+                            <View key={idx} style={styles.variantItem}>
+                              <Text style={styles.variantSize}>{item.size}</Text>
+                              <Text style={styles.variantQtyCenter}>{item.quantity}x</Text>
+                              {item.rate && <Text style={styles.variantRate}>₹{item.rate}</Text>}
+                            </View>
+                          ))}
+                        </View>
+                      )}
                     </View>
-                  </View>
-                ));
+                  );
+                });
               })()}
             </View>
           )}
@@ -950,4 +1012,60 @@ const styles = StyleSheet.create({
   compactStatusText: { fontSize: FontSize.xs, fontWeight: '700', letterSpacing: 0.5 },
   compactMessage: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, backgroundColor: Colors.bg, borderBottomWidth: 1, borderBottomColor: Colors.border, gap: Spacing.sm },
   compactMessageText: { fontSize: FontSize.xs, color: Colors.textSecondary, flex: 1 },
+
+  // Table View Styles for Admin
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  tableViewContainer: {
+    marginTop: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  tableRowHeader: {
+    flexDirection: 'row',
+    backgroundColor: Colors.brand + '15',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  tableRowBody: {
+    flexDirection: 'row',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+  },
+  tableCell: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+    color: Colors.brand,
+  },
+  tableCellText: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  tableCellSmall: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+  },
+  statusBadgeSmall: {
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: Spacing.xs,
+  },
+  statusBadgeText: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+  },
 });
