@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
@@ -110,6 +111,12 @@ export default function OrderDetailScreen() {
     }
   }, [wsMessage]);
 
+  // Refresh order when screen comes into focus (returning from other screens)
+  useFocusEffect(
+    useCallback(() => {
+      fetchOrder();
+    }, [fetchOrder])
+  );
 
   const toggleDispatch = async () => {
     const action = order?.dispatched ? 'un-dispatch' : 'dispatch';

@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
@@ -117,6 +118,13 @@ export default function DashboardScreen() {
       fetchData();
     }
   }, [wsMessage]);
+
+  // Refresh dashboard when screen comes into focus (returning from dispatch/order screens)
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData])
+  );
 
   const onRefresh = () => { setRefreshing(true); fetchData(); };
 
