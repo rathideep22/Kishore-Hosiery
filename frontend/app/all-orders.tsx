@@ -238,12 +238,14 @@ export default function AllOrdersScreen() {
           onSelect={setGodownFilter}
           placeholder="Godown"
         />
-        <FilterDropdown
-          options={STATUS_FILTERS}
-          selectedKey={statusFilter}
-          onSelect={setStatusFilter}
-          placeholder="Status"
-        />
+        {user?.role === 'admin' && (
+          <FilterDropdown
+            options={STATUS_FILTERS}
+            selectedKey={statusFilter}
+            onSelect={setStatusFilter}
+            placeholder="Status"
+          />
+        )}
       </ScrollView>
 
       <DateRangePicker

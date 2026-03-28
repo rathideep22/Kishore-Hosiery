@@ -194,12 +194,14 @@ export default function SundhaScreen() {
         onChangeText={setSearch}
       />
 
-      <FilterDropdown
-        options={FILTERS}
-        selectedKey={filter}
-        onSelect={setFilter}
-        placeholder="Filter by Status"
-      />
+      {user?.role === 'admin' && (
+        <FilterDropdown
+          options={FILTERS}
+          selectedKey={filter}
+          onSelect={setFilter}
+          placeholder="Filter by Status"
+        />
+      )}
 
       {orders.length === 0 ? (
         <View style={styles.empty}>
