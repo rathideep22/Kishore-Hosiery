@@ -78,6 +78,9 @@ export default function SundhaScreen() {
         if (statusFilter === 'dispatched') return order.dispatched;
         return true;
       });
+    } else {
+      // Default: show only non-dispatched orders
+      filtered = filtered.filter(order => !order.dispatched);
     }
 
     // Search filter

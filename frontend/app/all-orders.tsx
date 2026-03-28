@@ -97,6 +97,9 @@ export default function AllOrdersScreen() {
         if (status === 'dispatched') return order.dispatched;
         return true;
       });
+    } else {
+      // Default: show only non-dispatched orders
+      filtered = filtered.filter(order => !order.dispatched);
     }
 
     // Date range filter

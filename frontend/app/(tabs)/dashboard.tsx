@@ -99,7 +99,7 @@ export default function DashboardScreen() {
       const past48Hours = new Date(now.getTime() - 48 * 60 * 60 * 1000);
 
       const recentOrders = allOrders
-        .filter((order: Order) => new Date(order.createdAt) >= past48Hours)
+        .filter((order: Order) => !order.dispatched && new Date(order.createdAt) >= past48Hours)
         .sort((a: Order, b: Order) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .slice(0, 10);
 
