@@ -33,11 +33,13 @@ export function OrderFulfillment({
   orderId,
   totalParcels,
   onUpdate,
+  isAdmin = false,
 }: {
   items: OrderItem[];
   orderId: string;
   totalParcels: number;
   onUpdate: (updatedItems: OrderItem[]) => void;
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState<string | null>(null);
@@ -327,7 +329,18 @@ export function OrderFulfillment({
                   />
                   <Text style={styles.categoryName}>{category}</Text>
                 </View>
-                <Text style={styles.categoryCount}>{categoryItems.length} variant(s)</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                  <Text style={styles.categoryCount}>{categoryItems.length} variant(s)</Text>
+                  {isAdmin && (
+                    <TouchableOpacity
+                      onPress={() => router.push(`/order/${orderId}/category/${category}`)}
+                      style={styles.viewDetailsButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="eye" size={16} color={Colors.brand} />
+                    </TouchableOpacity>
+                  )}
+                </View>
               </TouchableOpacity>
 
               {isCategoryExpanded && categoryItems.map(item => {
@@ -581,6 +594,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: 6,
+  },
+  viewDetailsButton: {
+    padding: Spacing.xs,
+    borderRadius: 6,
+    backgroundColor: Colors.brand + '15',
   },
 
   // Variant Card

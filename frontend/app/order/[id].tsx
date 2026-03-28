@@ -503,6 +503,7 @@ export default function OrderDetailScreen() {
                   // Update order items immediately from API response
                   setOrder(prev => ({ ...prev, items: updatedItems }));
                 }}
+                isAdmin={isAdmin}
               />
             )}
           </View>
