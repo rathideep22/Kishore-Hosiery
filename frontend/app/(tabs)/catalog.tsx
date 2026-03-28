@@ -126,6 +126,30 @@ export default function CatalogScreen() {
     ]);
   };
 
+  const handleDeleteCategory = async (category: string) => {
+    Alert.alert(
+      'Delete Category',
+      `Delete "${category}" and all ${filteredProducts.filter(p => p.category === category).length} variants?`,
+      [
+        { text: 'Cancel' },
+        {
+          text: 'Delete All',
+          onPress: async () => {
+            try {
+              const categoryProducts = products.filter(p => p.category === category);
+              await Promise.all(categoryProducts.map(p => api.del(`/products/${p.id}`)));
+              fetchProducts();
+              Alert.alert('Success', `Category and ${categoryProducts.length} variants deleted`);
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  };
+
   const openEditModal = (product: Product) => {
     setEditingProduct(product);
     setFormData({
@@ -205,7 +229,18 @@ export default function CatalogScreen() {
           </View>
         )}
         renderSectionHeader={({ section: { title } }) => (
-          <Text style={styles.sectionHeader}>{title}</Text>
+          <View style={styles.sectionHeaderContainer}>
+            <Text style={styles.sectionHeader}>{title}</Text>
+            {user?.role === 'admin' && (
+              <TouchableOpacity
+                onPress={() => handleDeleteCategory(title)}
+                style={styles.deleteCategoryBtn}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash" size={16} color={Colors.danger} />
+              </TouchableOpacity>
+            )}
+          </View>
         )}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
@@ -311,6 +346,14 @@ const styles = StyleSheet.create({
     margin: Spacing.lg,
   },
   listContent: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
+  sectionHeaderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+  },
   sectionHeader: {
     fontSize: FontSize.sm,
     fontWeight: '700',
@@ -318,9 +361,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgSecondary,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.sm,
     borderRadius: 4,
+    flex: 1,
+  },
+  deleteCategoryBtn: {
+    padding: Spacing.sm,
+    marginLeft: Spacing.sm,
   },
   productCard: {
     flexDirection: 'row',
