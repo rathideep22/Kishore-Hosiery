@@ -551,13 +551,21 @@ export default function CatalogScreen() {
       </View>
 
       {/* Search */}
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search categories..."
-        placeholderTextColor={Colors.textSecondary}
-        value={search}
-        onChangeText={setSearch}
-      />
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={20} color={Colors.textSecondary} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by category name..."
+          placeholderTextColor={Colors.textSecondary}
+          value={search}
+          onChangeText={setSearch}
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')} activeOpacity={0.7}>
+            <Ionicons name="close-circle" size={20} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        )}
+      </View>
 
       {/* Categories List */}
       {categories.length === 0 ? (
@@ -643,16 +651,31 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
 
   // Search
-  searchInput: {
-    borderWidth: 1,
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: Spacing.lg,
+    marginVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    height: 48,
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
     borderColor: Colors.border,
-    borderRadius: 8,
-    paddingHorizontal: Spacing.lg,
-    height: 44,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  searchIcon: {
+    marginRight: Spacing.md,
+  },
+  searchInput: {
+    flex: 1,
     fontSize: FontSize.md,
     color: Colors.text,
-    backgroundColor: Colors.bgSecondary,
-    margin: Spacing.lg,
+    padding: 0,
   },
 
   // Categories
