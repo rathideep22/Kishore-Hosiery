@@ -144,17 +144,21 @@ export default function CatalogScreen() {
 
   const confirmDeleteVariant = async () => {
     if (!deleteVariantData) return;
+    const aliasToDelete = deleteVariantData.alias;
+    const idToDelete = deleteVariantData.id;
     setDeleting(true);
     try {
-      console.log('Deleting variant:', deleteVariantData.id, deleteVariantData.alias);
-      await api.del(`/products/${deleteVariantData.id}`);
+      console.log('Deleting variant:', idToDelete, aliasToDelete);
+      await api.del(`/products/${idToDelete}`);
       console.log('Delete success');
       await fetchProducts();
       setShowDeleteVariantModal(false);
       setDeleteVariantData(null);
-      Alert.alert('Success', `${deleteVariantData.alias} deleted successfully`);
+      Alert.alert('Success', `${aliasToDelete} deleted`);
     } catch (e: any) {
       console.error('Delete failed:', e);
+      setShowDeleteVariantModal(false);
+      setDeleteVariantData(null);
       Alert.alert('Error', e.message || 'Failed to delete variant');
     } finally {
       setDeleting(false);
@@ -168,18 +172,21 @@ export default function CatalogScreen() {
 
   const confirmDeleteCategory = async () => {
     if (!deleteCategoryData) return;
+    const categoryToDelete = deleteCategoryData;
     setDeleting(true);
     try {
-      const categoryProducts = getVariantsInCategory(deleteCategoryData);
-      console.log(`Deleting category "${deleteCategoryData}" with ${categoryProducts.length} variants`);
+      const categoryProducts = getVariantsInCategory(categoryToDelete);
+      console.log(`Deleting category "${categoryToDelete}" with ${categoryProducts.length} variants`);
       await Promise.all(categoryProducts.map(p => api.del(`/products/${p.id}`)));
       console.log('Category delete success');
       await fetchProducts();
       setShowDeleteCategoryModal(false);
       setDeleteCategoryData(null);
-      Alert.alert('Success', `${deleteCategoryData} and all variants deleted successfully`);
+      Alert.alert('Success', `${categoryToDelete} deleted`);
     } catch (e: any) {
       console.error('Category delete failed:', e);
+      setShowDeleteCategoryModal(false);
+      setDeleteCategoryData(null);
       Alert.alert('Error', e.message || 'Failed to delete category');
     } finally {
       setDeleting(false);
