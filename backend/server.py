@@ -328,8 +328,6 @@ async def create_order(req: CreateOrderRequest, user: dict = Depends(get_auth_us
         "godown": req.godown,
         "items": items,
         "totalParcels": total_parcels,
-        "invoiceGiven": False,
-        "transportSlip": False,
         "godownDistribution": [],
         "readinessStatus": "Pending",
         "dispatched": False,
@@ -409,40 +407,6 @@ async def delete_order(order_id: str, user: dict = Depends(get_auth_user)):
 
 
 # ─── Order Status Routes ─────────────────────────────────────────────────────
-
-@api_router.put("/orders/{order_id}/invoice")
-async def toggle_invoice(order_id: str, user: dict = Depends(get_auth_user)):
-    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    new_val = not order.get('invoiceGiven', False)
-    await db.orders.update_one({"id": order_id}, {"$set": {
-        "invoiceGiven": new_val,
-        "updatedAt": datetime.now(timezone.utc).isoformat()
-    }})
-    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
-    await create_audit_log(user['id'], "INVOICE_UPDATED", order_id,
-        f"Invoice {'given' if new_val else 'removed'} for {order['orderId']}")
-    await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
-    return updated
-
-
-@api_router.put("/orders/{order_id}/transport-slip")
-async def toggle_transport_slip(order_id: str, user: dict = Depends(get_auth_user)):
-    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    new_val = not order.get('transportSlip', False)
-    await db.orders.update_one({"id": order_id}, {"$set": {
-        "transportSlip": new_val,
-        "updatedAt": datetime.now(timezone.utc).isoformat()
-    }})
-    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
-    await create_audit_log(user['id'], "TRANSPORT_SLIP_UPDATED", order_id,
-        f"Transport slip {'created' if new_val else 'removed'} for {order['orderId']}")
-    await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
-    return updated
-
 
 @api_router.put("/orders/{order_id}/godown")
 async def update_godown(order_id: str, req: GodownUpdateRequest, user: dict = Depends(get_auth_user)):
@@ -652,16 +616,12 @@ async def get_dashboard_stats(user: dict = Depends(get_auth_user)):
         "dispatched": True,
         "dispatchedAt": {"$gte": today_start}
     })
-    no_invoice = await db.orders.count_documents({"invoiceGiven": False, "dispatched": False})
-    no_transport = await db.orders.count_documents({"transportSlip": False, "dispatched": False})
     return {
         "totalActive": total,
         "ready": ready,
         "partialReady": partial,
         "pending": pending,
-        "dispatchedToday": dispatched_today,
-        "noInvoice": no_invoice,
-        "noTransport": no_transport
+        "dispatchedToday": dispatched_today
     }
 
 

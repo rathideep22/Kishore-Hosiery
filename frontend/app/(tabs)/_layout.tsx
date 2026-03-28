@@ -42,6 +42,7 @@ export default function TabLayout() {
         name="catalog"
         options={{
           title: hideLabels ? '' : 'Catalog',
+          href: isAdmin ? '/(tabs)/catalog' : null,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="list-outline" size={size} color={color} />
           ),

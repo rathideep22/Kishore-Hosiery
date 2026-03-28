@@ -17,7 +17,7 @@ interface GodownEntry { godown: string; readyParcels: number; }
 interface OrderItem { productId: string; alias: string; category: string; size: string; printName: string; quantity: number; rate?: string; }
 interface Order {
   id: string; orderId: string; partyName: string; location: string; godown: string; message: string;
-  totalParcels: number; invoiceGiven: boolean; transportSlip: boolean;
+  totalParcels: number;
   godownDistribution: GodownEntry[]; readinessStatus: string;
   dispatched: boolean; dispatchedAt: string | null;
   items?: OrderItem[];
@@ -106,23 +106,6 @@ export default function OrderDetailScreen() {
     }
   }, [wsMessage]);
 
-  const toggleInvoice = async () => {
-    setActionLoading('invoice');
-    try {
-      const data = await api.put(`/orders/${id}/invoice`);
-      setOrder(data);
-    } catch (e: any) { Alert.alert('Error', e.message); }
-    finally { setActionLoading(''); }
-  };
-
-  const toggleTransport = async () => {
-    setActionLoading('transport');
-    try {
-      const data = await api.put(`/orders/${id}/transport-slip`);
-      setOrder(data);
-    } catch (e: any) { Alert.alert('Error', e.message); }
-    finally { setActionLoading(''); }
-  };
 
   const toggleDispatch = async () => {
     const action = order?.dispatched ? 'un-dispatch' : 'dispatch';
@@ -529,12 +512,6 @@ export default function OrderDetailScreen() {
             </View>
           )}
 
-          {/* Status Toggles */}
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>STATUS CHECKLIST</Text>
-            <StatusToggle label="Invoice Given" value={order.invoiceGiven} onToggle={toggleInvoice} icon="document-text-outline" />
-            <StatusToggle label="Transport Slip" value={order.transportSlip} onToggle={toggleTransport} icon="car-outline" />
-          </View>
 
           {/* Godown Distribution */}
           <View style={styles.section}>

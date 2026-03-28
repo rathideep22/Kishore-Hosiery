@@ -35,8 +35,6 @@ interface Order {
   totalParcels: number;
   readinessStatus: string;
   dispatched: boolean;
-  invoiceGiven: boolean;
-  transportSlip: boolean;
   godown: string;
   godownDistribution: { godown: string; readyParcels: number }[];
   createdAt: string;
@@ -166,22 +164,6 @@ export default function AllOrdersScreen() {
         <View style={styles.metaItem}>
           <Ionicons name="cube-outline" size={14} color={Colors.textSecondary} />
           <Text style={styles.metaText}>{getReadySummary(item)} parcels</Text>
-        </View>
-        <View style={styles.metaItem}>
-          {item.invoiceGiven ? (
-            <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
-          ) : (
-            <Ionicons name="close-circle" size={14} color={Colors.danger} />
-          )}
-          <Text style={styles.metaText}>Invoice</Text>
-        </View>
-        <View style={styles.metaItem}>
-          {item.transportSlip ? (
-            <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
-          ) : (
-            <Ionicons name="close-circle" size={14} color={Colors.danger} />
-          )}
-          <Text style={styles.metaText}>Transport</Text>
         </View>
       </View>
     </TouchableOpacity>

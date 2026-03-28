@@ -1,15 +1,12 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  Modal, Alert, ActivityIndicator, ScrollView, useWindowDimensions,
+  SectionList, Modal, Alert, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
-import { SearchInput } from '../../src/components/SearchInput';
-import { useResponsive } from '../../src/utils/responsive';
-import { getResponsiveTheme } from '../../src/constants/responsiveTheme';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
 
 interface Product {
@@ -21,43 +18,37 @@ interface Product {
   createdAt: string;
 }
 
-interface CategoryGroup {
-  category: string;
-  count: number;
-  expanded: boolean;
-  variants: Product[];
-}
-
 export default function CatalogScreen() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
-  const { width } = useResponsive();
-  const theme = getResponsiveTheme(width);
-
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<CategoryGroup[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // Modals
-  const [showAddVariantModal, setShowAddVariantModal] = useState(false);
-  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
-  const [showEditVariantModal, setShowEditVariantModal] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   // Form fields
-  const [variantForm, setVariantForm] = useState({ size: '', alias: '', printName: '' });
-  const [categoryForm, setCategoryForm] = useState('');
-  const [editingVariant, setEditingVariant] = useState<Product | null>(null);
-  const [editVariantForm, setEditVariantForm] = useState({ size: '', alias: '', printName: '' });
+  const [formData, setFormData] = useState({
+    category: '',
+    size: '',
+    printName: '',
+    alias: '',
+  });
 
   useEffect(() => {
     fetchProducts();
   }, []);
 
   useEffect(() => {
-    filterAndGroupCategories();
-  }, [products, search]);
+    const filtered = products.filter(p => {
+      const q = search.toLowerCase();
+      return p.category.toLowerCase().includes(q) ||
+             p.size.toLowerCase().includes(q) ||
+             p.alias.toLowerCase().includes(q) ||
+             p.printName.toLowerCase().includes(q);
+    });
+    setFilteredProducts(filtered);
+  }, [search, products]);
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -71,119 +62,53 @@ export default function CatalogScreen() {
     }
   };
 
-  const filterAndGroupCategories = () => {
-    let filtered = products;
-
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      filtered = filtered.filter(p =>
-        p.category.toLowerCase().includes(q) ||
-        p.size.toLowerCase().includes(q) ||
-        p.alias.toLowerCase().includes(q)
-      );
-    }
-
+  const groupByCategory = (prods: Product[]) => {
     const grouped: Record<string, Product[]> = {};
-    filtered.forEach(p => {
+    prods.forEach(p => {
       if (!grouped[p.category]) grouped[p.category] = [];
       grouped[p.category].push(p);
     });
-
-    const categoryList = Object.keys(grouped)
+    return Object.keys(grouped)
       .sort()
-      .map(cat => ({
-        category: cat,
-        count: grouped[cat].length,
-        expanded: false,
-        variants: grouped[cat].sort((a, b) => a.size.localeCompare(b.size)),
-      }));
-
-    setCategories(categoryList);
+      .map(cat => ({ title: cat, data: grouped[cat] }));
   };
 
-  const toggleCategoryExpand = (category: string) => {
-    setCategories(prev =>
-      prev.map(c =>
-        c.category === category ? { ...c, expanded: !c.expanded } : c
-      )
-    );
-  };
-
-  const handleAddVariant = async () => {
-    if (!variantForm.size.trim() || !variantForm.alias.trim() || !variantForm.printName.trim()) {
-      Alert.alert('Missing Fields', 'Please fill all fields');
+  const handleAddProduct = async () => {
+    if (!formData.category || !formData.size || !formData.alias || !formData.printName) {
+      Alert.alert('Error', 'All fields required');
       return;
     }
-
     try {
-      await api.post('/products', {
-        category: selectedCategory,
-        size: variantForm.size,
-        alias: variantForm.alias,
-        printName: variantForm.printName,
-      });
-      setVariantForm({ size: '', alias: '', printName: '' });
-      setShowAddVariantModal(false);
+      await api.post('/products', formData);
+      setFormData({ category: '', size: '', printName: '', alias: '' });
+      setShowAddModal(false);
       fetchProducts();
-      Alert.alert('Success', 'Variant added to category');
+      Alert.alert('Success', 'Product created');
     } catch (e: any) {
       Alert.alert('Error', e.message);
     }
   };
 
-  const handleAddCategory = async () => {
-    if (!categoryForm.trim()) {
-      Alert.alert('Missing Category', 'Please enter a category name');
-      return;
-    }
-
+  const handleEditProduct = async () => {
+    if (!editingProduct) return;
     try {
-      await api.post('/products', {
-        category: categoryForm,
-        size: 'Default',
-        alias: 'default-' + categoryForm.toLowerCase().replace(/\s+/g, '-'),
-        printName: categoryForm + ' - Default',
+      await api.put(`/products/${editingProduct.id}`, {
+        category: formData.category || undefined,
+        size: formData.size || undefined,
+        printName: formData.printName || undefined,
+        alias: formData.alias || undefined,
       });
-      setCategoryForm('');
-      setShowAddCategoryModal(false);
+      setEditingProduct(null);
+      setFormData({ category: '', size: '', printName: '', alias: '' });
       fetchProducts();
-      Alert.alert('Success', 'Category created with default variant');
+      Alert.alert('Success', 'Product updated');
     } catch (e: any) {
       Alert.alert('Error', e.message);
     }
   };
 
-  const handleEditVariant = (variant: Product) => {
-    setEditingVariant(variant);
-    setEditVariantForm({ size: variant.size, alias: variant.alias, printName: variant.printName });
-    setShowEditVariantModal(true);
-  };
-
-  const handleSaveEditVariant = async () => {
-    if (!editVariantForm.size.trim() || !editVariantForm.alias.trim() || !editVariantForm.printName.trim()) {
-      Alert.alert('Missing Fields', 'Please fill all fields');
-      return;
-    }
-
-    try {
-      await api.put(`/products/${editingVariant!.id}`, {
-        category: editingVariant!.category,
-        size: editVariantForm.size,
-        alias: editVariantForm.alias,
-        printName: editVariantForm.printName,
-      });
-      setShowEditVariantModal(false);
-      setEditingVariant(null);
-      setEditVariantForm({ size: '', alias: '', printName: '' });
-      fetchProducts();
-      Alert.alert('Success', 'Variant updated');
-    } catch (e: any) {
-      Alert.alert('Error', e.message);
-    }
-  };
-
-  const handleDeleteVariant = (productId: string, size: string) => {
-    Alert.alert('Delete Variant', `Delete ${size}?`, [
+  const handleDeleteProduct = async (productId: string, alias: string) => {
+    Alert.alert('Delete Product', `Delete ${alias}?`, [
       { text: 'Cancel' },
       {
         text: 'Delete',
@@ -191,7 +116,7 @@ export default function CatalogScreen() {
           try {
             await api.del(`/products/${productId}`);
             fetchProducts();
-            Alert.alert('Success', 'Variant deleted');
+            Alert.alert('Success', 'Product deleted');
           } catch (e: any) {
             Alert.alert('Error', e.message);
           }
@@ -201,25 +126,17 @@ export default function CatalogScreen() {
     ]);
   };
 
-  const handleDeleteCategory = (category: string) => {
-    Alert.alert('Delete Category', `Delete ${category} and all its variants?`, [
-      { text: 'Cancel' },
-      {
-        text: 'Delete All',
-        onPress: async () => {
-          try {
-            const categoryProducts = products.filter(p => p.category === category);
-            await Promise.all(categoryProducts.map(p => api.del(`/products/${p.id}`)));
-            fetchProducts();
-            Alert.alert('Success', 'Category and all variants deleted');
-          } catch (e: any) {
-            Alert.alert('Error', e.message);
-          }
-        },
-        style: 'destructive',
-      },
-    ]);
+  const openEditModal = (product: Product) => {
+    setEditingProduct(product);
+    setFormData({
+      category: product.category,
+      size: product.size,
+      printName: product.printName,
+      alias: product.alias,
+    });
   };
+
+  const sections = groupByCategory(filteredProducts);
 
   if (loading && products.length === 0) {
     return (
@@ -235,9 +152,13 @@ export default function CatalogScreen() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Text style={styles.title}>Product Catalog</Text>
-        {isAdmin && (
+        {user?.role === 'admin' && (
           <TouchableOpacity
-            onPress={() => setShowAddCategoryModal(true)}
+            onPress={() => {
+              setEditingProduct(null);
+              setFormData({ category: '', size: '', printName: '', alias: '' });
+              setShowAddModal(true);
+            }}
             activeOpacity={0.7}
           >
             <Ionicons name="add-circle" size={28} color={Colors.brand} />
@@ -245,261 +166,121 @@ export default function CatalogScreen() {
         )}
       </View>
 
-      <SearchInput
-        placeholder="Search categories, sizes..."
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search by category, size, alias..."
+        placeholderTextColor={Colors.textSecondary}
         value={search}
         onChangeText={setSearch}
       />
 
-      {categories.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="cube-outline" size={48} color={Colors.textSecondary} />
-          <Text style={styles.emptyText}>No products found</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={categories}
-          keyExtractor={item => item.category}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item: categoryItem }) => (
-            <View style={styles.categorySection}>
-              {/* Category Header */}
-              <TouchableOpacity
-                style={styles.categoryHeader}
-                onPress={() => toggleCategoryExpand(categoryItem.category)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.categoryLeft}>
-                  <Ionicons
-                    name={categoryItem.expanded ? 'chevron-down' : 'chevron-forward'}
-                    size={24}
-                    color={Colors.brand}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.categoryTitle} numberOfLines={2}>{categoryItem.category}</Text>
-                    <Text style={styles.categoryCount}>{categoryItem.count} variant{categoryItem.count !== 1 ? 's' : ''}</Text>
-                  </View>
-                </View>
-
-                {isAdmin && (
-                  <View style={styles.categoryActions}>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setSelectedCategory(categoryItem.category);
-                        setVariantForm({ size: '', alias: '', printName: '' });
-                        setShowAddVariantModal(true);
-                      }}
-                      style={styles.actionBtn}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="add" size={20} color={Colors.brand} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => handleDeleteCategory(categoryItem.category)}
-                      style={styles.actionBtn}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="trash" size={20} color={Colors.danger} />
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              {/* Variants List */}
-              {categoryItem.expanded && (
-                <View style={styles.variantsList}>
-                  {categoryItem.variants.map((variant, idx) => (
-                    <View key={variant.id} style={styles.variantRow}>
-                      <View style={styles.variantInfo}>
-                        <Text style={styles.variantSize}>{variant.size}</Text>
-                        <Text style={styles.variantAlias}>{variant.alias}</Text>
-                      </View>
-                      {isAdmin && (
-                        <View style={styles.variantActions}>
-                          <TouchableOpacity
-                            onPress={() => handleEditVariant(variant)}
-                            style={styles.actionBtn}
-                            activeOpacity={0.7}
-                          >
-                            <Ionicons name="create" size={18} color={Colors.brand} />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => handleDeleteVariant(variant.id, variant.size)}
-                            style={styles.actionBtn}
-                            activeOpacity={0.7}
-                          >
-                            <Ionicons name="trash" size={18} color={Colors.danger} />
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  ))}
-                </View>
-              )}
+      <SectionList
+        sections={sections}
+        keyExtractor={(item, index) => item.id + index}
+        renderItem={({ item }) => (
+          <View style={styles.productCard}>
+            <View style={styles.productInfo}>
+              <Text style={styles.alias}>{item.alias}</Text>
+              <Text style={styles.size}>{item.size}</Text>
+              <Text style={styles.printName} numberOfLines={2}>{item.printName}</Text>
             </View>
-          )}
-        />
-      )}
+            {user?.role === 'admin' && (
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  onPress={() => openEditModal(item)}
+                  style={styles.iconBtn}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="pencil" size={18} color={Colors.info} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleDeleteProduct(item.id, item.alias)}
+                  style={styles.iconBtn}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="trash" size={18} color={Colors.danger} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+        renderSectionHeader={({ section: { title } }) => (
+          <Text style={styles.sectionHeader}>{title}</Text>
+        )}
+        contentContainerStyle={styles.listContent}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Ionicons name="cube-outline" size={48} color={Colors.textSecondary} />
+            <Text style={styles.emptyText}>No products found</Text>
+          </View>
+        }
+      />
 
-      {/* Add Variant Modal */}
-      <Modal visible={showAddVariantModal} transparent animationType="slide">
-        <SafeAreaView style={styles.modal}>
-          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Variant to {selectedCategory}</Text>
-              <TouchableOpacity onPress={() => setShowAddVariantModal(false)} activeOpacity={0.7}>
-                <Ionicons name="close" size={24} color={Colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.label}>SIZE</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. 12-12"
-              placeholderTextColor={Colors.textSecondary}
-              value={variantForm.size}
-              onChangeText={v => setVariantForm({ ...variantForm, size: v })}
-            />
-
-            <Text style={styles.label}>ALIAS CODE</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. 18502"
-              placeholderTextColor={Colors.textSecondary}
-              value={variantForm.alias}
-              onChangeText={v => setVariantForm({ ...variantForm, alias: v })}
-            />
-
-            <Text style={styles.label}>PRINT NAME</Text>
-            <TextInput
-              style={[styles.input, styles.multilineInput]}
-              placeholder="e.g. 0 - FILLER 12-12 160 GSM-Y"
-              placeholderTextColor={Colors.textSecondary}
-              value={variantForm.printName}
-              onChangeText={v => setVariantForm({ ...variantForm, printName: v })}
-              multiline
-              textAlignVertical="top"
-            />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                onPress={() => setShowAddVariantModal(false)}
-                style={[styles.btn, styles.btnSecondary]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.btnText, styles.btnSecondaryText]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleAddVariant}
-                style={[styles.btn, styles.btnPrimary]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.btnText, styles.btnPrimaryText]}>Add Variant</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-
-      {/* Add Category Modal */}
-      <Modal visible={showAddCategoryModal} transparent animationType="slide">
+      <Modal visible={showAddModal} transparent animationType="slide">
         <SafeAreaView style={styles.modal}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add New Category</Text>
-              <TouchableOpacity onPress={() => setShowAddCategoryModal(false)} activeOpacity={0.7}>
+              <Text style={styles.modalTitle}>
+                {editingProduct ? 'Edit Product' : 'Add Product'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowAddModal(false)}
+                activeOpacity={0.7}
+              >
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>CATEGORY NAME</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. 160 GSM SUPER STRONG YELLOW"
+              placeholder="Category"
               placeholderTextColor={Colors.textSecondary}
-              value={categoryForm}
-              onChangeText={setCategoryForm}
+              value={formData.category}
+              onChangeText={v => setFormData({ ...formData, category: v })}
             />
-
-            <Text style={styles.hint}>A default variant will be created. You can add more sizes later.</Text>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                onPress={() => setShowAddCategoryModal(false)}
-                style={[styles.btn, styles.btnSecondary]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.btnText, styles.btnSecondaryText]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleAddCategory}
-                style={[styles.btn, styles.btnPrimary]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.btnText, styles.btnPrimaryText]}>Create Category</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </SafeAreaView>
-      </Modal>
-
-      {/* Edit Variant Modal */}
-      <Modal visible={showEditVariantModal} transparent animationType="slide">
-        <SafeAreaView style={styles.modal}>
-          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Variant</Text>
-              <TouchableOpacity onPress={() => setShowEditVariantModal(false)} activeOpacity={0.7}>
-                <Ionicons name="close" size={24} color={Colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.label}>SIZE</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. 12-12"
+              placeholder="Size"
               placeholderTextColor={Colors.textSecondary}
-              value={editVariantForm.size}
-              onChangeText={v => setEditVariantForm({ ...editVariantForm, size: v })}
+              value={formData.size}
+              onChangeText={v => setFormData({ ...formData, size: v })}
             />
-
-            <Text style={styles.label}>ALIAS CODE</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. 18502"
+              placeholder="Alias (code)"
               placeholderTextColor={Colors.textSecondary}
-              value={editVariantForm.alias}
-              onChangeText={v => setEditVariantForm({ ...editVariantForm, alias: v })}
+              value={formData.alias}
+              onChangeText={v => setFormData({ ...formData, alias: v })}
             />
-
-            <Text style={styles.label}>PRINT NAME</Text>
             <TextInput
               style={[styles.input, styles.multilineInput]}
-              placeholder="e.g. 0 - FILLER 12-12 160 GSM-Y"
+              placeholder="Print Name"
               placeholderTextColor={Colors.textSecondary}
-              value={editVariantForm.printName}
-              onChangeText={v => setEditVariantForm({ ...editVariantForm, printName: v })}
+              value={formData.printName}
+              onChangeText={v => setFormData({ ...formData, printName: v })}
               multiline
               textAlignVertical="top"
             />
 
             <View style={styles.modalActions}>
               <TouchableOpacity
-                onPress={() => setShowEditVariantModal(false)}
+                onPress={() => setShowAddModal(false)}
                 style={[styles.btn, styles.btnSecondary]}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.btnText, styles.btnSecondaryText]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={handleSaveEditVariant}
+                onPress={editingProduct ? handleEditProduct : handleAddProduct}
                 style={[styles.btn, styles.btnPrimary]}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.btnText, styles.btnPrimaryText]}>Save Changes</Text>
+                <Text style={[styles.btnText, styles.btnPrimaryText]}>
+                  {editingProduct ? 'Update' : 'Add'}
+                </Text>
               </TouchableOpacity>
             </View>
-          </ScrollView>
+          </View>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
@@ -517,69 +298,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
-  title: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.text },
-  listContent: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md, paddingTop: Spacing.xs },
-
-  // Category Styles
-  categorySection: { marginBottom: Spacing.sm },
-  categoryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    minHeight: 50,
-  },
-  categoryLeft: { flexDirection: 'row', alignItems: 'flex-start', flex: 1, gap: Spacing.sm },
-  categoryTitle: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, flex: 1, flexWrap: 'wrap' },
-  categoryCount: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 },
-  categoryActions: { flexDirection: 'row', gap: 4 },
-  actionBtn: { padding: 6, minWidth: 30, justifyContent: 'center', alignItems: 'center' },
-
-  // Variant Styles
-  variantsList: { backgroundColor: Colors.bgSecondary, borderRadius: 8, overflow: 'hidden', marginTop: 4 },
-  variantRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    paddingRight: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    minHeight: 42,
-  },
-  variantInfo: { flex: 1 },
-  variantSize: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text },
-  variantAlias: { fontSize: 10, color: Colors.brand, fontWeight: '700', marginTop: 2 },
-  variantActions: { flexDirection: 'row', gap: 4 },
-  deleteBtn: { padding: 6, minWidth: 30, justifyContent: 'center', alignItems: 'center' },
-
-  // Empty State
-  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xxl },
-  emptyText: { fontSize: FontSize.md, color: Colors.textSecondary, marginTop: Spacing.lg },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
-  // Modal Styles
-  modal: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  modalContent: {
-    flex: 1,
-    backgroundColor: Colors.bg,
-    marginTop: 'auto',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.lg,
-  },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg },
-  modalTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text },
-  label: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.sm, marginTop: Spacing.md },
-  hint: { fontSize: FontSize.xs, color: Colors.textSecondary, fontStyle: 'italic', marginBottom: Spacing.lg },
-  input: {
+  title: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text },
+  searchInput: {
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 8,
@@ -588,8 +308,46 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     color: Colors.text,
     backgroundColor: Colors.bgSecondary,
-    marginBottom: Spacing.md,
+    margin: Spacing.lg,
   },
+  listContent: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
+  sectionHeader: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: Colors.text,
+    backgroundColor: Colors.bgSecondary,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+    borderRadius: 4,
+  },
+  productCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  productInfo: { flex: 1 },
+  alias: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
+  size: { fontSize: FontSize.sm, color: Colors.textSecondary, marginVertical: 2 },
+  printName: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: Spacing.xs },
+  actions: { flexDirection: 'row', gap: Spacing.sm, marginLeft: Spacing.md },
+  iconBtn: { padding: Spacing.sm },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xxl },
+  emptyText: { fontSize: FontSize.md, color: Colors.textSecondary, marginTop: Spacing.lg },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  modal: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalContent: { flex: 1, backgroundColor: Colors.bg, marginTop: 'auto', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.lg },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg },
+  modalTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text },
+  input: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: Spacing.lg, height: 44, fontSize: FontSize.md, color: Colors.text, backgroundColor: Colors.bgSecondary, marginBottom: Spacing.md },
   multilineInput: { height: 100, paddingTop: Spacing.md },
   modalActions: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xl },
   btn: { flex: 1, borderRadius: 8, height: 48, justifyContent: 'center', alignItems: 'center' },
