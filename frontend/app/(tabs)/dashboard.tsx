@@ -98,8 +98,15 @@ export default function DashboardScreen() {
       const now = new Date();
       const past48Hours = new Date(now.getTime() - 48 * 60 * 60 * 1000);
 
+      const isAdmin = user?.role === 'admin';
       const recentOrders = allOrders
-        .filter((order: Order) => !order.dispatched && new Date(order.createdAt) >= past48Hours)
+        .filter((order: Order) => {
+          const isWithin48Hours = new Date(order.createdAt) >= past48Hours;
+          if (isAdmin) {
+            return isWithin48Hours; // Admin sees all orders from last 48 hours
+          }
+          return !order.dispatched && isWithin48Hours; // Staff sees only non-dispatched
+        })
         .sort((a: Order, b: Order) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .slice(0, 10);
 

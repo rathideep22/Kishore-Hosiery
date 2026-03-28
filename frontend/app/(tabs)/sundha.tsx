@@ -59,15 +59,16 @@ export default function SundhaScreen() {
       const path = '/orders?godown=Sundha';
       const data = await api.get(path);
       setAllOrders(data);
-      filterOrders(data, filter, search);
+      filterOrders(data, filter, search, user?.role);
     } catch {} finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [user?.role]);
 
-  const filterOrders = (allData: Order[], statusFilter: string, searchQuery: string) => {
+  const filterOrders = (allData: Order[], statusFilter: string, searchQuery: string, userRole?: string) => {
     let filtered = allData;
+    const isAdmin = userRole === 'admin';
 
     // Status filter
     if (statusFilter) {
@@ -79,8 +80,10 @@ export default function SundhaScreen() {
         return true;
       });
     } else {
-      // Default: show only non-dispatched orders
-      filtered = filtered.filter(order => !order.dispatched);
+      // Default: admin sees all, staff sees only non-dispatched
+      if (!isAdmin) {
+        filtered = filtered.filter(order => !order.dispatched);
+      }
     }
 
     // Search filter
@@ -98,8 +101,8 @@ export default function SundhaScreen() {
   useEffect(() => { fetchOrders(); }, []);
 
   useEffect(() => {
-    filterOrders(allOrders, filter, search);
-  }, [filter, search]);
+    filterOrders(allOrders, filter, search, user?.role);
+  }, [filter, search, user?.role]);
 
   useEffect(() => {
     if (wsMessage?.type?.startsWith('ORDER_')) fetchOrders();

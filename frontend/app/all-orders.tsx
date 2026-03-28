@@ -73,15 +73,16 @@ export default function AllOrdersScreen() {
       ]);
       const allData = [...(sundhData || []), ...(lalShivData || [])];
       setAllOrders(allData);
-      applyFilters(allData, statusFilter, godownFilter, startDate, endDate, search);
+      applyFilters(allData, statusFilter, godownFilter, startDate, endDate, search, user?.role);
     } catch {} finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [user?.role]);
 
-  const applyFilters = (allData: Order[], status: string, godown: string, start: string | null, end: string | null, searchQuery: string) => {
+  const applyFilters = (allData: Order[], status: string, godown: string, start: string | null, end: string | null, searchQuery: string, userRole?: string) => {
     let filtered = allData;
+    const isAdmin = userRole === 'admin';
 
     // Godown filter
     if (godown) {
@@ -98,8 +99,10 @@ export default function AllOrdersScreen() {
         return true;
       });
     } else {
-      // Default: show only non-dispatched orders
-      filtered = filtered.filter(order => !order.dispatched);
+      // Default: admin sees all, staff sees only non-dispatched
+      if (!isAdmin) {
+        filtered = filtered.filter(order => !order.dispatched);
+      }
     }
 
     // Date range filter
@@ -131,8 +134,8 @@ export default function AllOrdersScreen() {
   useEffect(() => { fetchOrders(); }, []);
 
   useEffect(() => {
-    applyFilters(allOrders, statusFilter, godownFilter, startDate, endDate, search);
-  }, [statusFilter, godownFilter, startDate, endDate, search]);
+    applyFilters(allOrders, statusFilter, godownFilter, startDate, endDate, search, user?.role);
+  }, [statusFilter, godownFilter, startDate, endDate, search, user?.role]);
 
   useEffect(() => {
     if (wsMessage?.type?.startsWith('ORDER_')) fetchOrders();
