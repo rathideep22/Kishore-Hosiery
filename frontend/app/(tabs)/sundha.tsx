@@ -124,6 +124,10 @@ export default function SundhaScreen() {
     return Colors.danger;
   };
 
+  const getStatusText = (order: Order) => {
+    return order.dispatched ? 'Dispatched' : order.readinessStatus;
+  };
+
   const getReadySummary = (order: Order) => {
     // Calculate from items' fulfillment data
     const fulfilled = (order.items || []).reduce((sum, item) => {
@@ -142,7 +146,11 @@ export default function SundhaScreen() {
     >
       <View style={styles.cardTop}>
         <Text style={styles.partyName}>{item.partyName}</Text>
-        <View style={[styles.statusDot, { backgroundColor: getStatusColor(item) }]} />
+        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item) + '18' }]}>
+          <Text style={[styles.statusBadgeText, { color: getStatusColor(item) }]}>
+            {getStatusText(item)}
+          </Text>
+        </View>
       </View>
       <View style={styles.cardMeta}>
         <View style={styles.metaItem}>
@@ -223,7 +231,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, padding: Spacing.lg, marginBottom: Spacing.sm, minHeight: 100 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
   orderId: { fontSize: FontSize.md, fontWeight: '700', color: Colors.brand },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
+  statusBadge: { borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
+  statusBadgeText: { fontSize: FontSize.xs, fontWeight: '700' },
   partyName: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text, marginBottom: Spacing.sm },
   cardMeta: { flexDirection: 'row', gap: Spacing.lg },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
