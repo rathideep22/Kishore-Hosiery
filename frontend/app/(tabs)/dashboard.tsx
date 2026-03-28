@@ -41,7 +41,7 @@ function StatCard({ label, value, color, icon, width }: { label: string; value: 
       styles.statCard,
       { borderLeftColor: color, width: cardWidth },
     ]}>
-      <Ionicons name={icon as any} size={18} color={color} />
+      <Ionicons name={icon as any} size={24} color={color} />
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
@@ -208,11 +208,11 @@ const styles = StyleSheet.create({
   rolePill: { backgroundColor: Colors.brand, borderRadius: 20, paddingHorizontal: Spacing.md, paddingVertical: 4 },
   roleText: { color: Colors.textInverse, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   statsGrid: { paddingHorizontal: Spacing.lg, marginBottom: 8, marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  statCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderLeftWidth: 3, borderRadius: 8, padding: 6, minHeight: 60, marginBottom: 5 },
-  statValue: { fontSize: FontSize.lg, fontWeight: '900', color: Colors.text, marginTop: 1 },
-  statLabel: { fontSize: 7, color: Colors.textSecondary, marginTop: 1, lineHeight: 9 },
-  allOrdersCard: { backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.brand, borderRadius: 8, padding: 6, minHeight: 60, marginBottom: 5, justifyContent: 'center', alignItems: 'center' },
-  allOrdersLabel: { fontSize: 7, color: Colors.brand, fontWeight: '700', marginTop: 1, lineHeight: 9 },
+  statCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderLeftWidth: 3, borderRadius: 8, padding: 10, minHeight: 85, marginBottom: 8 },
+  statValue: { fontSize: FontSize.xl, fontWeight: '900', color: Colors.text, marginTop: 4 },
+  statLabel: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 3, lineHeight: 12 },
+  allOrdersCard: { backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.brand, borderRadius: 8, padding: 10, minHeight: 85, marginBottom: 8, justifyContent: 'center', alignItems: 'center' },
+  allOrdersLabel: { fontSize: FontSize.xs, color: Colors.brand, fontWeight: '700', marginTop: 2, lineHeight: 12 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingTop: 8, paddingBottom: 6 },
   sectionTitle: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
   orderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: Spacing.lg, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, marginBottom: Spacing.sm, minHeight: 80 },
