@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, FlatList, Checkbox,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../src/utils/api';
+import { SearchInput } from '../../src/components/SearchInput';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
 
 interface Product {
@@ -24,106 +25,289 @@ interface SelectedItem {
   size: string;
   printName: string;
   quantity: number;
+  rate: string;
 }
 
-interface CategoryGroup {
+interface CategoryInOrder {
   category: string;
-  products: Product[];
-  expanded: boolean;
+  categoryRate: string;
+  items: SelectedItem[];
+}
+
+interface VariantSelection {
+  productId: string;
+  size: string;
+  quantity: string;
+  rate: string;
+  selected: boolean;
+}
+
+interface Gowdown {
+  id: string;
+  name: string;
 }
 
 export default function CreateOrderScreen() {
   const router = useRouter();
   const [partyName, setPartyName] = useState('');
+  const [location, setLocation] = useState('');
+  const [godown, setGodown] = useState('');
   const [message, setMessage] = useState('');
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<CategoryGroup[]>([]);
-  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [gowdowns, setGowdowns] = useState<Gowdown[]>([]);
+  const [categoriesInOrder, setCategoriesInOrder] = useState<CategoryInOrder[]>([]);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
+  // Category selection modal
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categorySearch, setCategorySearch] = useState('');
+  const [filteredCategories, setFilteredCategories] = useState<string[]>([]);
+  const [categoryRateInput, setCategoryRateInput] = useState('');
+
+  // Variant selection modal
+  const [showVariantModal, setShowVariantModal] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategoryRate, setSelectedCategoryRate] = useState('');
+  const [categoryProducts, setCategoryProducts] = useState<Product[]>([]);
+  const [variantSearch, setVariantSearch] = useState('');
+  const [filteredVariants, setFilteredVariants] = useState<Product[]>([]);
+  const [variantSelections, setVariantSelections] = useState<VariantSelection[]>([]);
+
   useEffect(() => {
-    fetchProducts();
+    fetchInitialData();
   }, []);
 
-  const fetchProducts = async () => {
+  const fetchInitialData = async () => {
     try {
-      const data = await api.get('/products');
-      setProducts(data);
-      groupProducts(data);
+      const [productsData, gowdownsData] = await Promise.all([
+        api.get('/products'),
+        api.get('/gowdowns'),
+      ]);
+      setAllProducts(productsData);
+      const uniqueCategories = [...new Set(productsData.map((p: Product) => p.category))].sort();
+      setCategories(uniqueCategories);
+      setFilteredCategories(uniqueCategories);
+      console.log('📦 Gowdowns fetched:', gowdownsData);
+      setGowdowns(gowdownsData);
     } catch (e: any) {
+      console.error('❌ Error fetching data:', e);
       Alert.alert('Error', e.message);
     } finally {
       setInitialLoading(false);
     }
   };
 
-  const groupProducts = (prods: Product[]) => {
-    const grouped: Record<string, Product[]> = {};
-    prods.forEach(p => {
-      if (!grouped[p.category]) grouped[p.category] = [];
-      grouped[p.category].push(p);
+  const handleAddCategory = () => {
+    setCategorySearch('');
+    setCategoryRateInput('');
+    setFilteredCategories(categories);
+    setShowCategoryModal(true);
+  };
+
+  const handleSelectCategory = (cat: string) => {
+    // Validate category rate if provided
+    if (categoryRateInput.trim()) {
+      const rateNum = parseFloat(categoryRateInput);
+      if (isNaN(rateNum) || rateNum <= 0) {
+        Alert.alert('Invalid Category Rate', 'Category rate must be a valid number greater than 0');
+        return;
+      }
+    }
+
+    setSelectedCategory(cat);
+    setSelectedCategoryRate(categoryRateInput);
+    const products = allProducts.filter(p => p.category === cat).sort((a, b) => a.size.localeCompare(b.size));
+    setCategoryProducts(products);
+    setFilteredVariants(products);
+
+    // Initialize variant selections with category rate pre-filled
+    const initialSelections = products.map(p => ({
+      productId: p.id,
+      size: p.size,
+      quantity: '',
+      rate: categoryRateInput, // Auto-fill with category rate
+      selected: false,
+    }));
+    setVariantSelections(initialSelections);
+
+    setVariantSearch('');
+    setCategoryRateInput(''); // Clear rate input for next category
+    setShowCategoryModal(false);
+    setShowVariantModal(true);
+  };
+
+  const handleVariantSearch = (text: string) => {
+    setVariantSearch(text);
+    const filtered = categoryProducts.filter(p =>
+      p.size.toLowerCase().includes(text.toLowerCase()) ||
+      p.alias.toLowerCase().includes(text.toLowerCase())
+    );
+
+    const filtered_ids = filtered.map(f => f.id);
+    setVariantSelections(prev =>
+      prev.map(v => ({
+        ...v,
+        selected: filtered_ids.includes(v.productId) && v.selected,
+      }))
+    );
+    setFilteredVariants(filtered);
+  };
+
+  const toggleVariantSelection = (productId: string) => {
+    setVariantSelections(prev =>
+      prev.map(v =>
+        v.productId === productId
+          ? { ...v, selected: !v.selected }
+          : v
+      )
+    );
+  };
+
+  const updateVariantField = (productId: string, field: 'quantity' | 'rate', value: string) => {
+    setVariantSelections(prev =>
+      prev.map(v =>
+        v.productId === productId
+          ? { ...v, [field]: value }
+          : v
+      )
+    );
+  };
+
+  const handleAddVariants = () => {
+    const selectedVariants = variantSelections.filter(v => v.selected);
+
+    if (selectedVariants.length === 0) {
+      Alert.alert('Error', 'Please select at least one variant');
+      return;
+    }
+
+    // Validate each selected variant
+    for (const variant of selectedVariants) {
+      const product = categoryProducts.find(p => p.id === variant.productId);
+
+      // Check quantity
+      if (!variant.quantity.trim()) {
+        Alert.alert('Missing Quantity', `Please enter quantity for ${product?.size}`);
+        return;
+      }
+
+      const qtyNum = parseInt(variant.quantity);
+      if (isNaN(qtyNum) || qtyNum <= 0) {
+        Alert.alert('Invalid Quantity', `Quantity for ${product?.size} must be a number greater than 0`);
+        return;
+      }
+
+      // Check rate if no category rate is set
+      if (!selectedCategoryRate) {
+        if (!variant.rate.trim()) {
+          Alert.alert('Missing Rate', `Please enter rate for ${product?.size}`);
+          return;
+        }
+
+        const rateNum = parseFloat(variant.rate);
+        if (isNaN(rateNum) || rateNum <= 0) {
+          Alert.alert('Invalid Rate', `Rate for ${product?.size} must be a valid number greater than 0`);
+          return;
+        }
+      }
+    }
+
+    // Create items from selected variants
+    const newItems: SelectedItem[] = selectedVariants.map(selection => {
+      const product = categoryProducts.find(p => p.id === selection.productId)!;
+      return {
+        productId: product.id,
+        alias: product.alias,
+        category: product.category,
+        size: product.size,
+        printName: product.printName,
+        quantity: parseInt(selection.quantity),
+        rate: selectedCategoryRate || selection.rate, // Use category rate if set, otherwise variant rate
+      };
     });
-    const cats = Object.keys(grouped)
-      .sort()
-      .map(cat => ({ category: cat, products: grouped[cat], expanded: false }));
-    setCategories(cats);
+
+    // Add to existing category or create new
+    setCategoriesInOrder(prev => {
+      const existing = prev.find(c => c.category === selectedCategory);
+      if (existing) {
+        return prev.map(c =>
+          c.category === selectedCategory
+            ? { ...c, items: [...c.items, ...newItems] }
+            : c
+        );
+      } else {
+        return [...prev, { category: selectedCategory!, categoryRate: selectedCategoryRate, items: newItems }];
+      }
+    });
+
+    handleCloseVariantModal();
   };
 
-  const toggleCategory = (index: number) => {
-    const newCats = [...categories];
-    newCats[index].expanded = !newCats[index].expanded;
-    setCategories(newCats);
+  const handleRemoveVariant = (categoryName: string, productId: string) => {
+    setCategoriesInOrder(prev =>
+      prev
+        .map(c =>
+          c.category === categoryName
+            ? { ...c, items: c.items.filter(i => i.productId !== productId) }
+            : c
+        )
+        .filter(c => c.items.length > 0)
+    );
   };
 
-  const toggleProduct = (product: Product) => {
-    const exists = selectedItems.find(item => item.productId === product.id);
-    if (exists) {
-      setSelectedItems(selectedItems.filter(item => item.productId !== product.id));
-    } else {
-      setSelectedItems([
-        ...selectedItems,
-        {
-          productId: product.id,
-          alias: product.alias,
-          category: product.category,
-          size: product.size,
-          printName: product.printName,
-          quantity: 1,
-        },
-      ]);
-    }
+  const handleCloseVariantModal = () => {
+    setShowVariantModal(false);
+    setSelectedCategory(null);
+    setSelectedCategoryRate('');
+    setVariantSelections([]);
+    setCategoryProducts([]);
   };
 
-  const updateQuantity = (productId: string, quantity: number) => {
-    if (quantity <= 0) {
-      setSelectedItems(selectedItems.filter(item => item.productId !== productId));
-    } else {
-      setSelectedItems(selectedItems.map(item =>
-        item.productId === productId ? { ...item, quantity } : item
-      ));
-    }
-  };
-
-  const totalParcels = selectedItems.reduce((sum, item) => sum + item.quantity, 0);
+  const totalParcels = categoriesInOrder.reduce(
+    (sum, cat) => sum + cat.items.reduce((s, item) => s + item.quantity, 0),
+    0
+  );
 
   const submit = async () => {
-    if (!partyName.trim()) { Alert.alert('Error', 'Party name is required'); return; }
-    if (!message.trim()) { Alert.alert('Error', 'Order message is required'); return; }
-    if (selectedItems.length === 0) { Alert.alert('Error', 'Select at least one product'); return; }
+    if (!partyName.trim()) {
+      Alert.alert('Missing Party Name', 'Please enter the party/customer name');
+      return;
+    }
+    if (!location.trim()) {
+      Alert.alert('Missing Location', 'Please enter the location/address');
+      return;
+    }
+    if (!godown) {
+      Alert.alert('Missing Gowdown', 'Please select which gowdown this order belongs to (Sundha or Lal-Shivnagar)');
+      return;
+    }
+    if (categoriesInOrder.length === 0) {
+      Alert.alert('No Products Added', 'Please add at least one product category to the order');
+      return;
+    }
 
     setLoading(true);
     try {
-      await api.post('/orders', {
+      const allItems = categoriesInOrder.flatMap(c => c.items);
+      const payload = {
         partyName: partyName.trim(),
+        location: location.trim(),
         message: message.trim(),
-        items: selectedItems,
+        godown: godown,
+        items: allItems,
         totalParcels: totalParcels,
-      });
+      };
+      console.log('📤 Submitting order:', payload);
+      const response = await api.post('/orders', payload);
+      console.log('✅ Order created:', response);
+      setLoading(false);
       router.replace('/(tabs)/dashboard');
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      console.error('❌ Order creation error:', e);
       setLoading(false);
+      Alert.alert('Error', e.message || 'Failed to create order');
     }
   };
 
@@ -136,8 +320,6 @@ export default function CreateOrderScreen() {
       </SafeAreaView>
     );
   }
-
-  const isProductSelected = (productId: string) => selectedItems.some(item => item.productId === productId);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -161,7 +343,40 @@ export default function CreateOrderScreen() {
             onChangeText={setPartyName}
           />
 
-          <Text style={styles.label}>ORDER MESSAGE</Text>
+          <Text style={styles.label}>LOCATION</Text>
+          <TextInput
+            testID="location-input"
+            style={styles.input}
+            placeholder="e.g. Delhi, Gurgaon"
+            placeholderTextColor={Colors.textSecondary}
+            value={location}
+            onChangeText={setLocation}
+          />
+
+          <Text style={styles.label}>GOWDOWN</Text>
+          <View style={styles.gowdownBoxes}>
+            <TouchableOpacity
+              testID="gowdown-sundha"
+              style={[styles.gowdownBox, godown === 'Sundha' && styles.gowdownBoxSelected]}
+              onPress={() => setGodown('Sundha')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="home" size={16} color={godown === 'Sundha' ? Colors.brand : Colors.text} />
+              <Text style={[styles.gowdownBoxText, godown === 'Sundha' && styles.gowdownBoxTextSelected]}>Sundha</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              testID="gowdown-lal-shivnagar"
+              style={[styles.gowdownBox, godown === 'Lal-Shivnagar' && styles.gowdownBoxSelected]}
+              onPress={() => setGodown('Lal-Shivnagar')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="storefront" size={16} color={godown === 'Lal-Shivnagar' ? Colors.brand : Colors.text} />
+              <Text style={[styles.gowdownBoxText, godown === 'Lal-Shivnagar' && styles.gowdownBoxTextSelected]}>Lal-Shiv</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.label}>ORDER MESSAGE (Optional)</Text>
           <TextInput
             testID="order-message-input"
             style={[styles.input, styles.messageInput]}
@@ -173,115 +388,216 @@ export default function CreateOrderScreen() {
             textAlignVertical="top"
           />
 
-          <Text style={styles.label}>SELECT PRODUCTS</Text>
-          <View style={styles.productsContainer}>
-            {categories.map((cat, catIndex) => (
-              <View key={cat.category}>
-                <TouchableOpacity
-                  style={styles.categoryHeader}
-                  onPress={() => toggleCategory(catIndex)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={cat.expanded ? 'chevron-down' : 'chevron-forward'}
-                    size={20}
-                    color={Colors.text}
-                  />
-                  <Text style={styles.categoryTitle}>{cat.category}</Text>
-                </TouchableOpacity>
-
-                {cat.expanded && (
-                  <View style={styles.productsSection}>
-                    {cat.products.map(prod => (
-                      <View key={prod.id} style={styles.productRow}>
-                        <TouchableOpacity
-                          style={styles.checkboxArea}
-                          onPress={() => toggleProduct(prod)}
-                          activeOpacity={0.7}
-                        >
-                          <View style={[styles.checkbox, isProductSelected(prod.id) && styles.checkboxChecked]}>
-                            {isProductSelected(prod.id) && (
-                              <Ionicons name="checkmark" size={16} color={Colors.textInverse} />
-                            )}
-                          </View>
-                          <View style={styles.productDetails}>
-                            <Text style={styles.productAlias}>{prod.alias}</Text>
-                            <Text style={styles.productSize}>{prod.size}</Text>
-                          </View>
-                        </TouchableOpacity>
-
-                        {isProductSelected(prod.id) && (
-                          <View style={styles.quantityControl}>
-                            <TouchableOpacity
-                              onPress={() => {
-                                const item = selectedItems.find(i => i.productId === prod.id);
-                                if (item) updateQuantity(prod.id, item.quantity - 1);
-                              }}
-                              style={styles.qtyBtn}
-                              activeOpacity={0.7}
-                            >
-                              <Ionicons name="remove" size={16} color={Colors.text} />
-                            </TouchableOpacity>
-                            <Text style={styles.qtyText}>
-                              {selectedItems.find(i => i.productId === prod.id)?.quantity}
-                            </Text>
-                            <TouchableOpacity
-                              onPress={() => {
-                                const item = selectedItems.find(i => i.productId === prod.id);
-                                if (item) updateQuantity(prod.id, item.quantity + 1);
-                              }}
-                              style={styles.qtyBtn}
-                              activeOpacity={0.7}
-                            >
-                              <Ionicons name="add" size={16} color={Colors.text} />
-                            </TouchableOpacity>
-                          </View>
-                        )}
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            ))}
-          </View>
-
-          {selectedItems.length > 0 && (
-            <View style={styles.selectedSummary}>
-              <Text style={styles.summaryTitle}>Selected Items</Text>
-              {selectedItems.map(item => (
-                <View key={item.productId} style={styles.summaryItem}>
-                  <View>
-                    <Text style={styles.summaryItemName}>{item.alias} - {item.size}</Text>
-                    <Text style={styles.summaryItemDesc}>{item.printName}</Text>
-                  </View>
-                  <Text style={styles.summaryItemQty}>{item.quantity}x</Text>
+          <Text style={styles.label}>CATEGORIES IN ORDER</Text>
+          {categoriesInOrder.length === 0 ? (
+            <Text style={styles.emptyText}>No categories added yet</Text>
+          ) : (
+            categoriesInOrder.map((catInOrder, catIdx) => (
+              <View key={catIdx} style={styles.categoryCard}>
+                <Text style={styles.categoryName}>{catInOrder.category}</Text>
+                {catInOrder.categoryRate && <Text style={styles.categoryRateTag}>Rate: ₹{catInOrder.categoryRate}</Text>}
+                <View style={styles.variantsList}>
+                  {catInOrder.items.map(item => (
+                    <View key={item.productId} style={styles.variantItem}>
+                      <Text style={styles.variantSize}>{item.size}</Text>
+                      <Text style={styles.variantQtyCenter}>{item.quantity}x</Text>
+                      {item.rate && <Text style={styles.variantRate}>₹{item.rate}</Text>}
+                    </View>
+                  ))}
                 </View>
-              ))}
-              <View style={styles.summaryTotal}>
-                <Text style={styles.totalLabel}>Total Parcels:</Text>
-                <Text style={styles.totalValue}>{totalParcels}</Text>
+              </View>
+            ))
+          )}
+
+          <TouchableOpacity
+            testID="add-category-btn"
+            style={styles.addCategoryBtn}
+            onPress={handleAddCategory}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add-circle" size={20} color={Colors.textInverse} />
+            <Text style={styles.addCategoryText}>Add Category</Text>
+          </TouchableOpacity>
+
+          {categoriesInOrder.length > 0 && (
+            <View style={styles.summary}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Total Parcels:</Text>
+                <Text style={styles.summaryValue}>{totalParcels}</Text>
               </View>
             </View>
           )}
 
-          <TouchableOpacity
-            testID="submit-order-btn"
-            style={[styles.submitBtn, loading && styles.btnDisabled]}
-            onPress={submit}
-            disabled={loading}
-            activeOpacity={0.7}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <>
-                <Ionicons name="checkmark-circle" size={22} color={Colors.textInverse} />
-                <Text style={styles.submitText}>Create Order</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {categoriesInOrder.length > 0 && (
+            <TouchableOpacity
+              testID="submit-order-btn"
+              style={[styles.submitBtn, loading && styles.btnDisabled]}
+              onPress={submit}
+              disabled={loading}
+              activeOpacity={0.7}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={22} color={Colors.textInverse} />
+                  <Text style={styles.submitText}>Create Order</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Category Selection Modal */}
+      <Modal visible={showCategoryModal} transparent animationType="slide">
+        <SafeAreaView style={styles.modal}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Category</Text>
+              <TouchableOpacity onPress={() => setShowCategoryModal(false)} activeOpacity={0.7}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <SearchInput
+              placeholder="Search categories..."
+              value={categorySearch}
+              onChangeText={(text: string) => {
+                setCategorySearch(text);
+                setFilteredCategories(
+                  categories.filter(c => c.toLowerCase().includes(text.toLowerCase()))
+                );
+              }}
+            />
+
+            <View style={styles.categoryRateInputSection}>
+              <View style={styles.rateInputHeader}>
+                <Ionicons name="pricetag" size={16} color={Colors.brand} />
+                <Text style={styles.categoryRateInputLabel}>Set Rate for This Category (Optional)</Text>
+              </View>
+              <Text style={styles.categoryRateInputHint}>This rate will auto-fill all variants of this category</Text>
+              <TextInput
+                style={styles.categoryRateInputField}
+                placeholder="e.g. 100"
+                placeholderTextColor={Colors.textSecondary}
+                value={categoryRateInput}
+                onChangeText={setCategoryRateInput}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            <FlatList
+              data={filteredCategories}
+              keyExtractor={item => item}
+              renderItem={({ item }) => (
+                <View style={styles.categoryOptionRow}>
+                  <TouchableOpacity
+                    style={styles.categoryOption}
+                    onPress={() => handleSelectCategory(item)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.categoryOptionText}>{item}</Text>
+                    <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+              )}
+              scrollEnabled
+            />
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Variant Selection Modal - Multi-checkbox */}
+      <Modal visible={showVariantModal} transparent animationType="slide">
+        <SafeAreaView style={styles.modal}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{selectedCategory}</Text>
+              <TouchableOpacity onPress={handleCloseVariantModal} activeOpacity={0.7}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {selectedCategoryRate && (
+              <View style={styles.categoryRateBox}>
+                <View style={styles.rateBoxHeader}>
+                  <Ionicons name="checkmark-circle" size={18} color={Colors.brand} />
+                  <Text style={styles.categoryRateLabel}>Category Rate: ₹{selectedCategoryRate}</Text>
+                </View>
+                <Text style={styles.categoryRateNote}>Auto-filled for all variants (editable)</Text>
+              </View>
+            )}
+            {!selectedCategoryRate && (
+              <View style={styles.rateRequiredBox}>
+                <Ionicons name="alert-circle" size={18} color={Colors.warning} />
+                <Text style={styles.rateRequiredText}>Enter rate for each variant</Text>
+              </View>
+            )}
+
+            <SearchInput
+              placeholder="Search variants..."
+              value={variantSearch}
+              onChangeText={handleVariantSearch}
+            />
+
+            <Text style={styles.subLabel}>SELECT VARIANTS & ENTER QUANTITY</Text>
+            <FlatList
+              data={filteredVariants}
+              keyExtractor={item => item.id}
+              scrollEnabled
+              renderItem={({ item }) => {
+                const selection = variantSelections.find(v => v.productId === item.id);
+                return (
+                  <View style={styles.variantCheckRow}>
+                    <TouchableOpacity
+                      style={styles.checkboxArea}
+                      onPress={() => toggleVariantSelection(item.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.checkbox, selection?.selected && styles.checkboxChecked]}>
+                        {selection?.selected && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                      </View>
+                      <Text style={styles.variantLabel}>{item.size}</Text>
+                    </TouchableOpacity>
+
+                    {selection?.selected && (
+                      <View style={styles.inputRow}>
+                        <TextInput
+                          style={[styles.smallInput, styles.qtyInput]}
+                          placeholder="Qty"
+                          placeholderTextColor={Colors.textSecondary}
+                          value={selection.quantity}
+                          onChangeText={(val) => updateVariantField(item.id, 'quantity', val)}
+                          keyboardType="number-pad"
+                        />
+                        <TextInput
+                          style={[styles.smallInput, styles.rateInput, selectedCategoryRate && styles.rateInputAuto]}
+                          placeholder="Rate"
+                          placeholderTextColor={Colors.textSecondary}
+                          value={selection.rate}
+                          onChangeText={(val) => updateVariantField(item.id, 'rate', val)}
+                          keyboardType="decimal-pad"
+                          editable={true}
+                        />
+                      </View>
+                    )}
+                  </View>
+                );
+              }}
+            />
+
+            <TouchableOpacity
+              style={styles.addVariantsBtn}
+              onPress={handleAddVariants}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="checkmark-circle" size={20} color={Colors.textInverse} />
+              <Text style={styles.addVariantsText}>Add All Selected</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -290,36 +606,64 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border },
   backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  title: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text },
+  title: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.text },
   scroll: { flex: 1, padding: Spacing.xl },
   label: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.sm, marginTop: Spacing.lg },
-  input: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: Spacing.lg, height: 52, fontSize: FontSize.md, color: Colors.text, backgroundColor: Colors.bg },
-  messageInput: { height: 140, paddingTop: Spacing.md },
-  productsContainer: { marginBottom: Spacing.lg },
-  categoryHeader: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.bgSecondary, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: 8, marginBottom: Spacing.sm },
-  categoryTitle: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text, marginLeft: Spacing.sm },
-  productsSection: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, marginBottom: Spacing.md, overflow: 'hidden' },
-  productRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  checkboxArea: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  checkbox: { width: 24, height: 24, borderWidth: 2, borderColor: Colors.border, borderRadius: 4, justifyContent: 'center', alignItems: 'center', marginRight: Spacing.md },
-  checkboxChecked: { backgroundColor: Colors.brand, borderColor: Colors.brand },
-  productDetails: { flex: 1 },
-  productAlias: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text },
-  productSize: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
-  quantityControl: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  qtyBtn: { width: 28, height: 28, borderWidth: 1, borderColor: Colors.border, borderRadius: 4, justifyContent: 'center', alignItems: 'center' },
-  qtyText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text, minWidth: 30, textAlign: 'center' },
-  selectedSummary: { backgroundColor: Colors.bgSecondary, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.lg },
-  summaryTitle: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.md },
-  summaryItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  summaryItemName: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text },
-  summaryItemDesc: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
-  summaryItemQty: { fontSize: FontSize.md, fontWeight: '700', color: Colors.brand },
-  summaryTotal: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.md, paddingTopMargin: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: Spacing.md },
-  totalLabel: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
-  totalValue: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.brand },
-  submitBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', marginTop: Spacing.xxl, gap: Spacing.sm, marginBottom: Spacing.xl },
+  subLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.sm, marginTop: Spacing.md },
+  input: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: Spacing.lg, height: 48, fontSize: FontSize.md, color: Colors.text, backgroundColor: Colors.bg, marginBottom: Spacing.md },
+  messageInput: { height: 100, paddingTop: Spacing.md },
+  gowdownBoxes: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.lg },
+  gowdownBox: { flex: 1, backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.border, borderRadius: 12, paddingVertical: Spacing.md, paddingHorizontal: Spacing.sm, alignItems: 'center', gap: Spacing.xs },
+  gowdownBoxSelected: { borderColor: Colors.brand, borderWidth: 2, backgroundColor: Colors.brand + '08' },
+  gowdownBoxText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, textAlign: 'center' },
+  gowdownBoxTextSelected: { color: Colors.brand, fontWeight: '700' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyText: { fontSize: FontSize.sm, color: Colors.textSecondary, fontStyle: 'italic', paddingVertical: Spacing.lg },
+  categoryCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.md },
+  categoryName: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.sm },
+  categoryRateTag: { fontSize: FontSize.xs, color: Colors.brand, fontWeight: '700', marginBottom: Spacing.md, backgroundColor: Colors.brand + '15', paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: 4, alignSelf: 'flex-start' },
+  variantsList: { gap: Spacing.sm },
+  variantItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.bgSecondary, borderRadius: 6, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, gap: Spacing.md },
+  variantSize: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, flex: 1 },
+  variantRate: { fontSize: FontSize.sm, color: Colors.brand, fontWeight: '700', minWidth: 60, textAlign: 'right' },
+  variantQtyCenter: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, textAlign: 'center', minWidth: 50 },
+  addCategoryBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 8, height: 48, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm, marginVertical: Spacing.lg },
+  addCategoryText: { color: Colors.textInverse, fontSize: FontSize.md, fontWeight: '700' },
+  summary: { backgroundColor: Colors.bgSecondary, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.lg, marginTop: Spacing.lg },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryLabel: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
+  summaryValue: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.brand },
+  submitBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', marginTop: Spacing.xl, gap: Spacing.sm, marginBottom: Spacing.xl },
   btnDisabled: { opacity: 0.6 },
   submitText: { color: Colors.textInverse, fontSize: FontSize.lg, fontWeight: '700' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  // Modal styles
+  modal: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalContent: { flex: 1, backgroundColor: Colors.bg, marginTop: 'auto', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.lg, maxHeight: '90%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg },
+  modalTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text },
+  categoryRateInputSection: { backgroundColor: Colors.brand + '08', borderRadius: 8, padding: Spacing.md, marginBottom: Spacing.lg, borderWidth: 1, borderColor: Colors.brand + '20' },
+  categoryRateInputLabel: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, marginBottom: Spacing.xs },
+  categoryRateInputHint: { fontSize: FontSize.xs, color: Colors.textSecondary, marginBottom: Spacing.sm },
+  categoryRateInputField: { borderWidth: 1, borderColor: Colors.brand, borderRadius: 10, paddingHorizontal: Spacing.md, height: 44, fontSize: FontSize.md, color: Colors.text, backgroundColor: Colors.bg, shadowColor: Colors.brand, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 2, elevation: 1 },
+  categoryOptionRow: { borderBottomWidth: 1, borderBottomColor: Colors.border },
+  categoryOption: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
+  categoryOptionText: { fontSize: FontSize.md, color: Colors.text, fontWeight: '500' },
+  categoryRateBox: { backgroundColor: Colors.brand + '10', borderRadius: 8, padding: Spacing.md, marginBottom: Spacing.lg, borderLeftWidth: 3, borderLeftColor: Colors.brand },
+  rateBoxHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  categoryRateLabel: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.brand, flex: 1 },
+  categoryRateNote: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: Spacing.xs, marginLeft: Spacing.lg },
+  rateRequiredBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.warning + '10', borderRadius: 8, padding: Spacing.md, marginBottom: Spacing.lg, gap: Spacing.sm, borderLeftWidth: 3, borderLeftColor: Colors.warning },
+  rateRequiredText: { fontSize: FontSize.sm, color: Colors.warning, fontWeight: '600', flex: 1 },
+  variantCheckRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border, gap: Spacing.md },
+  checkboxArea: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: Spacing.sm },
+  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: Colors.border, justifyContent: 'center', alignItems: 'center' },
+  checkboxChecked: { backgroundColor: Colors.brand, borderColor: Colors.brand },
+  variantLabel: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text },
+  inputRow: { flexDirection: 'row', gap: Spacing.sm },
+  smallInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: 6, paddingHorizontal: Spacing.sm, height: 36, fontSize: FontSize.sm, color: Colors.text, backgroundColor: Colors.bg },
+  qtyInput: { width: 50 },
+  rateInput: { width: 60 },
+  rateInputAuto: { backgroundColor: Colors.brand + '08', borderColor: Colors.brand },
+  addVariantsBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 8, height: 48, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.lg, marginBottom: Spacing.lg },
+  addVariantsText: { color: Colors.textInverse, fontSize: FontSize.md, fontWeight: '700' },
 });

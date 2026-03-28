@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import jwt
 import asyncio
+from products_data import PRODUCTS_DATA
 
 ROOT_DIR = Path(__file__).parent
 env_path = ROOT_DIR / '.env'
@@ -48,20 +49,6 @@ class CreateUserRequest(BaseModel):
     lastName: str
     role: str
 
-class CreateOrderRequest(BaseModel):
-    partyName: str
-    message: str
-    totalParcels: int
-
-class UpdateOrderRequest(BaseModel):
-    partyName: Optional[str] = None
-    message: Optional[str] = None
-    totalParcels: Optional[int] = None
-
-class GodownUpdateRequest(BaseModel):
-    godown: str
-    readyParcels: int
-
 class OrderProductItem(BaseModel):
     productId: str
     alias: str
@@ -69,6 +56,19 @@ class OrderProductItem(BaseModel):
     size: str
     printName: str
     quantity: int
+    rate: Optional[str] = None
+
+class UpdateOrderRequest(BaseModel):
+    partyName: Optional[str] = None
+    location: Optional[str] = None
+    godown: Optional[str] = None
+    message: Optional[str] = None
+    totalParcels: Optional[int] = None
+    items: Optional[List[OrderProductItem]] = None
+
+class GodownUpdateRequest(BaseModel):
+    godown: str
+    readyParcels: int
 
 class CreateProductRequest(BaseModel):
     category: str
@@ -84,7 +84,9 @@ class UpdateProductRequest(BaseModel):
 
 class CreateOrderRequest(BaseModel):
     partyName: str
+    location: str
     message: str
+    godown: str  # Which gowdown this order is for
     items: Optional[List[OrderProductItem]] = []
     totalParcels: Optional[int] = None
 
@@ -152,6 +154,9 @@ def require_admin(user: dict):
     if user.get('role') != 'admin':
         raise HTTPException(status_code=403, detail="Admin access required")
 
+def require_admin_or_staff(user: dict):
+    if user.get('role') not in ['admin', 'staff']:
+        raise HTTPException(status_code=403, detail="Admin or staff access required")
 
 # ─── Notification & Audit Helpers ─────────────────────────────────────────────
 
@@ -273,7 +278,8 @@ async def delete_user(user_id: str, user: dict = Depends(get_auth_user)):
 async def get_orders(
     user: dict = Depends(get_auth_user),
     status: Optional[str] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    godown: Optional[str] = None
 ):
     conditions = []
     two_days_ago = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
@@ -300,6 +306,8 @@ async def get_orders(
                 {"orderId": {"$regex": search, "$options": "i"}}
             ]
         })
+    if godown:
+        conditions.append({"godown": godown})
     query = {"$and": conditions} if conditions else {}
     orders = await db.orders.find(query, {"_id": 0}).sort("createdAt", -1).to_list(500)
     return orders
@@ -307,7 +315,7 @@ async def get_orders(
 
 @api_router.post("/orders")
 async def create_order(req: CreateOrderRequest, user: dict = Depends(get_auth_user)):
-    require_admin(user)
+    require_admin_or_staff(user)
     order_num = await get_next_order_id()
     items = [item.dict() for item in req.items] if req.items else []
     total_parcels = sum(item.quantity for item in req.items) if req.items else req.totalParcels or 0
@@ -315,7 +323,9 @@ async def create_order(req: CreateOrderRequest, user: dict = Depends(get_auth_us
         "id": str(uuid.uuid4()),
         "orderId": f"KH-{order_num:04d}",
         "partyName": req.partyName,
+        "location": req.location,
         "message": req.message,
+        "godown": req.godown,
         "items": items,
         "totalParcels": total_parcels,
         "invoiceGiven": False,
@@ -362,8 +372,14 @@ async def update_order(order_id: str, req: UpdateOrderRequest, user: dict = Depe
     update = {"updatedAt": datetime.now(timezone.utc).isoformat()}
     if req.partyName is not None:
         update["partyName"] = req.partyName
+    if req.location is not None:
+        update["location"] = req.location
+    if req.godown is not None:
+        update["godown"] = req.godown
     if req.message is not None:
         update["message"] = req.message
+    if req.items is not None:
+        update["items"] = [item.dict() for item in req.items]
     if req.totalParcels is not None:
         update["totalParcels"] = req.totalParcels
         total_ready = sum(g.get('readyParcels', 0) for g in order.get('godownDistribution', []))
@@ -581,6 +597,14 @@ async def delete_product(product_id: str, user: dict = Depends(get_auth_user)):
     return {"message": "Product deleted"}
 
 
+# ─── Gowdown Routes ──────────────────────────────────────────────────────────
+
+@api_router.get("/gowdowns")
+async def get_gowdowns(user: dict = Depends(get_auth_user)):
+    gowdowns = await db.gowdowns.find({}, {"_id": 0}).to_list(100)
+    return gowdowns
+
+
 # ─── Notification Routes ─────────────────────────────────────────────────────
 
 @api_router.get("/notifications")
@@ -688,44 +712,15 @@ async def startup():
     await db.products.create_index("category")
     await db.products.create_index("alias", unique=True)
 
-    # Seed products
+    # Seed products from PRODUCTS_DATA
     products_data = [
-        # 160 GSM SUPER STRONG YELLOW
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "12-9", "printName": "0 - FILLER 12-9 160 GSM-Y-SUPER STRONG", "alias": "18501"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "12-12", "printName": "0 - FILLER 12-12 160 GSM-Y-SUPER STRONG", "alias": "18502"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "12-15", "printName": "0 - FILLER 12-15 160 GSM-Y-SUPER STRONG", "alias": "18503"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "12-18", "printName": "0 - FILLER 12-18 160 GSM-Y-SUPER STRONG", "alias": "18504"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "12-24", "printName": "0 - FILLER 12-24 160 GSM-Y-SUPER STRONG", "alias": "18505"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "15-15", "printName": "0 - FILLER 15-15 160 GSM-Y-SUPER STRONG", "alias": "18506"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "15-18", "printName": "0 - FILLER 15-18 160 GSM-Y-SUPER STRONG", "alias": "18507"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "18-18", "printName": "0 - FILLER 18-18 160 GSM-Y-SUPER STRONG", "alias": "18508"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "15-21", "printName": "0 - FILLER 15-21 160 GSM-Y-SUPER STRONG", "alias": "18509"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "20-21", "printName": "0 - FILLER 20-21 160 GSM-Y-SUPER STRONG", "alias": "18511"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "18-24", "printName": "0 - FILLER 18-24 160 GSM-Y-SUPER STRONG", "alias": "18512"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "24-24", "printName": "0 - FILLER 24-24 160 GSM-Y-SUPER STRONG", "alias": "18513"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "18-30", "printName": "0 - FILLER 18-30 160 GSM-Y-SUPER STRONG", "alias": "18514"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "24-30", "printName": "0 - FILLER 24-30 160 GSM-Y-SUPER STRONG", "alias": "18515"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "30-30", "printName": "0 - FILLER 30-30 160 GSM-Y-SUPER STRONG", "alias": "18516"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "18-36", "printName": "0 - FILLER 18-36 160 GSM-Y-SUPER STRONG", "alias": "18521"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "36-36", "printName": "0 - FILLER 36-36 160 GSM-Y-SUPER STRONG", "alias": "18522"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "60-60", "printName": "0 - FILLER 60-60 160 GSM-Y-SUPER STRONG", "alias": "18523"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "30-36", "printName": "0 - FILLER 30-36 160 GSM-Y-SUPER STRONG", "alias": "18531"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "24-36", "printName": "0 - FILLER 24-36 160 GSM-Y-SUPER STRONG", "alias": "18530"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "40-40", "printName": "0 - FILLER 40-40 160 GSM-Y-SUPER STRONG", "alias": "18520"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "30-40", "printName": "0 - FILLER 30-40 160 GSM-Y-SUPER STRONG", "alias": "18518"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "24-40", "printName": "0 - FILLER 24-40 160 GSM-Y-SUPER STRONG", "alias": "18532"},
-        {"category": "160 GSM SUPER STRONG YELLOW", "size": "30-50", "printName": "0 - FILLER 30-50 160 GSM-Y-SUPER STRONG", "alias": "18533"},
-        # 6-3.5 BLACK KOHINOOR (sample)
-        {"category": "6-3.5 BLACK KOHINOOR", "size": "12-9", "printName": "6-3.5 KOH BLACK 12-9", "alias": "8051"},
-        {"category": "6-3.5 BLACK KOHINOOR", "size": "12-12", "printName": "6-3.5 KOH BLACK 12-12", "alias": "8052"},
-        {"category": "6-3.5 BLACK KOHINOOR", "size": "12-15", "printName": "6-3.5 KOH BLACK 12-15", "alias": "8053"},
-        {"category": "6-3.5 BLACK KOHINOOR", "size": "12-18", "printName": "6-3.5 KOH BLACK 12-18", "alias": "8054"},
-        {"category": "6-3.5 BLACK KOHINOOR", "size": "12-24", "printName": "6-3.5 KOH BLACK 12-24", "alias": "8055"},
-        {"category": "6-3.5 BLACK KOHINOOR", "size": "15-15", "printName": "6-3.5 KOH BLACK 15-15", "alias": "8056"},
-        {"category": "6-3.5 BLACK KOHINOOR", "size": "15-18", "printName": "6-3.5 KOH BLACK 15-18", "alias": "8057"},
-        {"category": "6-3.5 BLACK KOHINOOR", "size": "18-18", "printName": "6-3.5 KOH BLACK 18-18", "alias": "8058"},
-        {"category": "6-3.5 BLACK KOHINOOR", "size": "15-21", "printName": "6-3.5 KOH BLACK 15-21", "alias": "8059"},
-        {"category": "6-3.5 BLACK KOHINOOR", "size": "15-24", "printName": "6-3.5 KOH BLACK 15-24", "alias": "8060"},
+        {
+            "category": category,
+            "size": size,
+            "printName": printName,
+            "alias": alias
+        }
+        for category, size, printName, alias in PRODUCTS_DATA
     ]
 
     for prod in products_data:
@@ -743,6 +738,19 @@ async def startup():
             await db.products.insert_one(product_doc)
 
     logger.info("Products seeded successfully")
+
+    # Seed gowdowns
+    gowdowns = ["Sundha", "Lal-Shivnagar"]
+    for gowdown_name in gowdowns:
+        existing = await db.gowdowns.find_one({"name": gowdown_name})
+        if not existing:
+            await db.gowdowns.insert_one({
+                "id": str(uuid.uuid4()),
+                "name": gowdown_name,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "updatedAt": datetime.now(timezone.utc).isoformat()
+            })
+    logger.info("Gowdowns seeded successfully")
 
     # Seed admin users
     admin1 = await db.users.find_one({"phone": "+919999999901"})
@@ -793,3 +801,8 @@ app.add_middleware(
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

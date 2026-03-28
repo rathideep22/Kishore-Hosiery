@@ -1,19 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert,
-  ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform, Modal,
+  ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform, Modal, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
+import { SearchInput } from '../../src/components/SearchInput';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
 
 interface GodownEntry { godown: string; readyParcels: number; }
-interface OrderItem { productId: string; alias: string; category: string; size: string; printName: string; quantity: number; }
+interface OrderItem { productId: string; alias: string; category: string; size: string; printName: string; quantity: number; rate?: string; }
 interface Order {
-  id: string; orderId: string; partyName: string; message: string;
+  id: string; orderId: string; partyName: string; location: string; godown: string; message: string;
   totalParcels: number; invoiceGiven: boolean; transportSlip: boolean;
   godownDistribution: GodownEntry[]; readinessStatus: string;
   dispatched: boolean; dispatchedAt: string | null;
@@ -59,8 +60,26 @@ export default function OrderDetailScreen() {
   // Edit modal
   const [showEdit, setShowEdit] = useState(false);
   const [editParty, setEditParty] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editGodown, setEditGodown] = useState('');
   const [editMessage, setEditMessage] = useState('');
   const [editParcels, setEditParcels] = useState('');
+
+  // Edit modal - category/variant selection
+  const [allProducts, setAllProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [editCategoriesInOrder, setEditCategoriesInOrder] = useState<any[]>([]);
+  const [showEditCategoryModal, setShowEditCategoryModal] = useState(false);
+  const [editCategorySearch, setEditCategorySearch] = useState('');
+  const [editFilteredCategories, setEditFilteredCategories] = useState<string[]>([]);
+  const [editCategoryRateInput, setEditCategoryRateInput] = useState('');
+  const [showEditVariantModal, setShowEditVariantModal] = useState(false);
+  const [editSelectedCategory, setEditSelectedCategory] = useState<string | null>(null);
+  const [editSelectedCategoryRate, setEditSelectedCategoryRate] = useState('');
+  const [editCategoryProducts, setEditCategoryProducts] = useState<any[]>([]);
+  const [editVariantSearch, setEditVariantSearch] = useState('');
+  const [editFilteredVariants, setEditFilteredVariants] = useState<any[]>([]);
+  const [editVariantSelections, setEditVariantSelections] = useState<any[]>([]);
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -142,15 +161,221 @@ export default function OrderDetailScreen() {
   const saveEdit = async () => {
     setActionLoading('edit');
     try {
+      // Validate required fields
+      if (!editParty.trim()) {
+        Alert.alert('Missing Party Name', 'Please enter the party/customer name');
+        setActionLoading('');
+        return;
+      }
+      if (!editLocation.trim()) {
+        Alert.alert('Missing Location', 'Please enter the location/address');
+        setActionLoading('');
+        return;
+      }
+      if (!editGodown) {
+        Alert.alert('Missing Gowdown', 'Please select which gowdown (Sundha or Lal-Shivnagar)');
+        setActionLoading('');
+        return;
+      }
+
       const body: any = {};
       if (editParty !== order?.partyName) body.partyName = editParty;
+      if (editLocation !== order?.location) body.location = editLocation;
+      if (editGodown !== order?.godown) body.godown = editGodown;
       if (editMessage !== order?.message) body.message = editMessage;
-      if (parseInt(editParcels) !== order?.totalParcels) body.totalParcels = parseInt(editParcels);
+
+      // Include items - always send if categories exist
+      if (editCategoriesInOrder.length > 0) {
+        const allItems = editCategoriesInOrder.flatMap((c: any) => c.items);
+        body.items = allItems;
+        // Auto-calculate totalParcels from items
+        const calculatedTotalParcels = allItems.reduce((sum: number, item: any) => sum + item.quantity, 0);
+        body.totalParcels = calculatedTotalParcels;
+      } else if (parseInt(editParcels) !== order?.totalParcels) {
+        body.totalParcels = parseInt(editParcels);
+      }
+
+      if (Object.keys(body).length === 0) {
+        Alert.alert('Info', 'No changes made');
+        setShowEdit(false);
+        return;
+      }
+
       const data = await api.put(`/orders/${id}`, body);
       setOrder(data);
       setShowEdit(false);
+      Alert.alert('Success', 'Order updated successfully');
     } catch (e: any) { Alert.alert('Error', e.message); }
     finally { setActionLoading(''); }
+  };
+
+  const handleEditAddCategory = () => {
+    setEditCategorySearch('');
+    setEditCategoryRateInput('');
+    setEditFilteredCategories(categories);
+    setShowEditCategoryModal(true);
+  };
+
+  const handleEditSelectCategory = (cat: string) => {
+    // Validate category rate if provided
+    if (editCategoryRateInput.trim()) {
+      const rateNum = parseFloat(editCategoryRateInput);
+      if (isNaN(rateNum) || rateNum <= 0) {
+        Alert.alert('Invalid Category Rate', 'Category rate must be a valid number greater than 0');
+        return;
+      }
+    }
+
+    setEditSelectedCategory(cat);
+    setEditSelectedCategoryRate(editCategoryRateInput);
+    const products = allProducts.filter((p: any) => p.category === cat).sort((a: any, b: any) => a.size.localeCompare(b.size));
+    setEditCategoryProducts(products);
+    setEditFilteredVariants(products);
+
+    const initialSelections = products.map((p: any) => ({
+      productId: p.id,
+      size: p.size,
+      quantity: '',
+      rate: editCategoryRateInput,
+      selected: false,
+    }));
+    setEditVariantSelections(initialSelections);
+
+    setEditVariantSearch('');
+    setEditCategoryRateInput('');
+    setShowEditCategoryModal(false);
+    setShowEditVariantModal(true);
+  };
+
+  const handleEditVariantSearch = (text: string) => {
+    setEditVariantSearch(text);
+    const filtered = editCategoryProducts.filter((p: any) =>
+      p.size.toLowerCase().includes(text.toLowerCase()) ||
+      p.alias.toLowerCase().includes(text.toLowerCase())
+    );
+
+    const filtered_ids = filtered.map((f: any) => f.id);
+    setEditVariantSelections((prev: any) =>
+      prev.map((v: any) => ({
+        ...v,
+        selected: filtered_ids.includes(v.productId) && v.selected,
+      }))
+    );
+    setEditFilteredVariants(filtered);
+  };
+
+  const toggleEditVariantSelection = (productId: string) => {
+    setEditVariantSelections((prev: any) =>
+      prev.map((v: any) =>
+        v.productId === productId
+          ? { ...v, selected: !v.selected }
+          : v
+      )
+    );
+  };
+
+  const updateEditVariantField = (productId: string, field: 'quantity' | 'rate', value: string) => {
+    setEditVariantSelections((prev: any) =>
+      prev.map((v: any) =>
+        v.productId === productId
+          ? { ...v, [field]: value }
+          : v
+      )
+    );
+  };
+
+  const handleEditAddVariants = () => {
+    const selectedVariants = editVariantSelections.filter((v: any) => v.selected);
+
+    if (selectedVariants.length === 0) {
+      Alert.alert('Error', 'Please select at least one variant');
+      return;
+    }
+
+    // Validate each selected variant
+    for (const variant of selectedVariants) {
+      const product = editCategoryProducts.find((p: any) => p.id === variant.productId);
+
+      // Check quantity
+      if (!variant.quantity.trim()) {
+        Alert.alert('Missing Quantity', `Please enter quantity for ${product?.size}`);
+        return;
+      }
+
+      const qtyNum = parseInt(variant.quantity);
+      if (isNaN(qtyNum) || qtyNum <= 0) {
+        Alert.alert('Invalid Quantity', `Quantity for ${product?.size} must be a number greater than 0`);
+        return;
+      }
+
+      // Check rate if no category rate is set
+      if (!editSelectedCategoryRate) {
+        if (!variant.rate.trim()) {
+          Alert.alert('Missing Rate', `Please enter rate for ${product?.size}`);
+          return;
+        }
+
+        const rateNum = parseFloat(variant.rate);
+        if (isNaN(rateNum) || rateNum <= 0) {
+          Alert.alert('Invalid Rate', `Rate for ${product?.size} must be a valid number greater than 0`);
+          return;
+        }
+      }
+    }
+
+    const newItems: any[] = selectedVariants.map((selection: any) => {
+      const product = editCategoryProducts.find((p: any) => p.id === selection.productId)!;
+      return {
+        productId: product.id,
+        alias: product.alias,
+        category: product.category,
+        size: product.size,
+        printName: product.printName,
+        quantity: parseInt(selection.quantity),
+        rate: editSelectedCategoryRate || selection.rate,
+      };
+    });
+
+    setEditCategoriesInOrder((prev: any) => {
+      const existing = prev.find((c: any) => c.category === editSelectedCategory);
+      if (existing) {
+        return prev.map((c: any) =>
+          c.category === editSelectedCategory
+            ? { ...c, items: [...c.items, ...newItems] }
+            : c
+        );
+      } else {
+        return [...prev, { category: editSelectedCategory!, categoryRate: editSelectedCategoryRate, items: newItems }];
+      }
+    });
+
+    handleEditCloseVariantModal();
+  };
+
+  const handleEditCloseVariantModal = () => {
+    setShowEditVariantModal(false);
+    setEditSelectedCategory(null);
+    setEditSelectedCategoryRate('');
+    setEditVariantSelections([]);
+    setEditCategoryProducts([]);
+  };
+
+  const handleEditRemoveVariant = (categoryName: string, productId: string) => {
+    setEditCategoriesInOrder((prev: any) =>
+      prev
+        .map((c: any) =>
+          c.category === categoryName
+            ? { ...c, items: c.items.filter((i: any) => i.productId !== productId) }
+            : c
+        )
+        .filter((c: any) => c.items.length > 0)
+    );
+  };
+
+  const handleEditRemoveCategory = (categoryName: string) => {
+    setEditCategoriesInOrder((prev: any) =>
+      prev.filter((c: any) => c.category !== categoryName)
+    );
   };
 
   const deleteOrder = () => {
@@ -168,11 +393,48 @@ export default function OrderDetailScreen() {
     ]);
   };
 
-  const openEdit = () => {
+  const openEdit = async () => {
     if (order) {
       setEditParty(order.partyName);
+      setEditLocation(order.location);
+      setEditGodown(order.godown || '');
       setEditMessage(order.message);
       setEditParcels(String(order.totalParcels));
+
+      // Initialize categories in order from existing items
+      if (order.items && order.items.length > 0) {
+        const grouped: any[] = [];
+        const categoryMap: { [key: string]: any } = {};
+
+        order.items.forEach((item: OrderItem) => {
+          if (!categoryMap[item.category]) {
+            categoryMap[item.category] = {
+              category: item.category,
+              categoryRate: item.rate || '',
+              items: []
+            };
+          }
+          categoryMap[item.category].items.push(item);
+        });
+
+        setEditCategoriesInOrder(Object.values(categoryMap));
+      } else {
+        setEditCategoriesInOrder([]);
+      }
+
+      // Fetch products if not already loaded
+      if (allProducts.length === 0) {
+        try {
+          const productsData = await api.get('/products');
+          setAllProducts(productsData);
+          const uniqueCategories = [...new Set(productsData.map((p: any) => p.category))].sort();
+          setCategories(uniqueCategories);
+          setEditFilteredCategories(uniqueCategories);
+        } catch (e: any) {
+          console.error('Error fetching products:', e);
+        }
+      }
+
       setShowEdit(true);
     }
   };
@@ -218,6 +480,7 @@ export default function OrderDetailScreen() {
           {/* Order Info */}
           <View style={styles.section}>
             <Text style={styles.partyName}>{order.partyName}</Text>
+            <Text style={styles.locationText}>{order.location}</Text>
             <View style={[styles.statusBadge, { backgroundColor: (order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
               <Text style={[styles.statusBadgeText, { color: order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
                 {order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
@@ -233,22 +496,34 @@ export default function OrderDetailScreen() {
             </View>
           </View>
 
-          {/* Items */}
+          {/* Items - Grouped by Category */}
           {order.items && order.items.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>SELECTED PRODUCTS</Text>
-              {order.items.map((item, idx) => (
-                <View key={idx} style={styles.itemRow}>
-                  <View style={styles.itemInfo}>
-                    <Text style={styles.itemAlias}>{item.alias}</Text>
-                    <Text style={styles.itemSize}>{item.size}</Text>
-                    <Text style={styles.itemPrintName} numberOfLines={2}>{item.printName}</Text>
+              {(() => {
+                const groupedByCategory = order.items.reduce((acc: { [key: string]: typeof order.items }, item) => {
+                  if (!acc[item.category]) {
+                    acc[item.category] = [];
+                  }
+                  acc[item.category].push(item);
+                  return acc;
+                }, {});
+
+                return Object.entries(groupedByCategory).map(([category, items]) => (
+                  <View key={category} style={styles.categoryCard}>
+                    <Text style={styles.categoryName}>{category}</Text>
+                    <View style={styles.variantsList}>
+                      {items.map((item, idx) => (
+                        <View key={idx} style={styles.variantItem}>
+                          <Text style={styles.variantSize}>{item.size}</Text>
+                          <Text style={styles.variantQtyCenter}>{item.quantity}x</Text>
+                          {item.rate && <Text style={styles.variantRate}>₹{item.rate}</Text>}
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                  <View style={styles.itemQuantity}>
-                    <Text style={styles.itemQtyBadge}>{item.quantity}</Text>
-                  </View>
-                </View>
-              ))}
+                ));
+              })()}
             </View>
           )}
 
@@ -369,10 +644,84 @@ export default function OrderDetailScreen() {
       {/* Edit Modal */}
       <Modal visible={showEdit} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
             <Text style={styles.modalTitle}>Edit Order</Text>
             <Text style={styles.modalLabel}>PARTY NAME</Text>
             <TextInput testID="edit-party-input" style={styles.modalInput} value={editParty} onChangeText={setEditParty} />
+            <Text style={styles.modalLabel}>LOCATION</Text>
+            <TextInput testID="edit-location-input" style={styles.modalInput} value={editLocation} onChangeText={setEditLocation} />
+            <Text style={styles.modalLabel}>GOWDOWN</Text>
+            <View style={styles.gowdownBoxes}>
+              <TouchableOpacity
+                testID="edit-gowdown-sundha"
+                style={[styles.gowdownBox, editGodown === 'Sundha' && styles.gowdownBoxSelected]}
+                onPress={() => setEditGodown('Sundha')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="home" size={16} color={editGodown === 'Sundha' ? Colors.brand : Colors.text} />
+                <Text style={[styles.gowdownBoxText, editGodown === 'Sundha' && styles.gowdownBoxTextSelected]}>Sundha</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="edit-gowdown-lal-shivnagar"
+                style={[styles.gowdownBox, editGodown === 'Lal-Shivnagar' && styles.gowdownBoxSelected]}
+                onPress={() => setEditGodown('Lal-Shivnagar')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="storefront" size={16} color={editGodown === 'Lal-Shivnagar' ? Colors.brand : Colors.text} />
+                <Text style={[styles.gowdownBoxText, editGodown === 'Lal-Shivnagar' && styles.gowdownBoxTextSelected]}>Lal-Shiv</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalLabel}>CATEGORIES IN ORDER</Text>
+            {editCategoriesInOrder.length === 0 ? (
+              <Text style={styles.emptyText}>No categories added yet</Text>
+            ) : (
+              editCategoriesInOrder.map((catInOrder, catIdx) => (
+                <View key={catIdx} style={styles.categoryCard}>
+                  <View style={styles.categoryCardHeader}>
+                    <View>
+                      <Text style={styles.categoryName}>{catInOrder.category}</Text>
+                      {catInOrder.categoryRate && <Text style={styles.categoryRateTag}>Rate: ₹{catInOrder.categoryRate}</Text>}
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleEditRemoveCategory(catInOrder.category)}
+                      style={styles.removeCategoryBtn}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.variantsList}>
+                    {catInOrder.items.map((item: OrderItem, idx: number) => (
+                      <View key={idx} style={styles.variantItemRow}>
+                        <View style={styles.variantItemInfo}>
+                          <Text style={styles.variantSize}>{item.size}</Text>
+                          <Text style={styles.variantQtyCenter}>{item.quantity}x</Text>
+                          {item.rate && <Text style={styles.variantRate}>₹{item.rate}</Text>}
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => handleEditRemoveVariant(catInOrder.category, item.productId)}
+                          style={styles.removeVariantBtn}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="close" size={16} color={Colors.danger} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ))
+            )}
+
+            <TouchableOpacity
+              style={styles.addCategoryBtn}
+              onPress={handleEditAddCategory}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add-circle" size={20} color={Colors.textInverse} />
+              <Text style={styles.addCategoryText}>Add Category</Text>
+            </TouchableOpacity>
+
             <Text style={styles.modalLabel}>MESSAGE</Text>
             <TextInput testID="edit-message-input" style={[styles.modalInput, { height: 100 }]} value={editMessage} onChangeText={setEditMessage} multiline textAlignVertical="top" />
             <Text style={styles.modalLabel}>TOTAL PARCELS</Text>
@@ -385,8 +734,158 @@ export default function OrderDetailScreen() {
                 {actionLoading === 'edit' ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveText}>Save</Text>}
               </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </View>
+      </Modal>
+
+      {/* Edit Category Selection Modal */}
+      <Modal visible={showEditCategoryModal} transparent animationType="slide">
+        <SafeAreaView style={styles.modal}>
+          <View style={styles.modalHeaderContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Category</Text>
+              <TouchableOpacity onPress={() => setShowEditCategoryModal(false)} activeOpacity={0.7}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <SearchInput
+              placeholder="Search categories..."
+              value={editCategorySearch}
+              onChangeText={(text: string) => {
+                setEditCategorySearch(text);
+                setEditFilteredCategories(
+                  categories.filter(c => c.toLowerCase().includes(text.toLowerCase()))
+                );
+              }}
+            />
+
+            <View style={styles.categoryRateInputSection}>
+              <View style={styles.rateInputHeader}>
+                <Ionicons name="pricetag" size={16} color={Colors.brand} />
+                <Text style={styles.categoryRateInputLabel}>Set Rate for This Category (Optional)</Text>
+              </View>
+              <Text style={styles.categoryRateInputHint}>This rate will auto-fill all variants of this category</Text>
+              <TextInput
+                style={styles.categoryRateInputField}
+                placeholder="e.g. 100"
+                placeholderTextColor={Colors.textSecondary}
+                value={editCategoryRateInput}
+                onChangeText={setEditCategoryRateInput}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            <FlatList
+              data={editFilteredCategories}
+              keyExtractor={item => item}
+              renderItem={({ item }) => (
+                <View style={styles.categoryOptionRow}>
+                  <TouchableOpacity
+                    style={styles.categoryOption}
+                    onPress={() => handleEditSelectCategory(item)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.categoryOptionText}>{item}</Text>
+                    <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+              )}
+              scrollEnabled
+            />
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Edit Variant Selection Modal */}
+      <Modal visible={showEditVariantModal} transparent animationType="slide">
+        <SafeAreaView style={styles.modal}>
+          <View style={styles.modalHeaderContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{editSelectedCategory}</Text>
+              <TouchableOpacity onPress={handleEditCloseVariantModal} activeOpacity={0.7}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {editSelectedCategoryRate && (
+              <View style={styles.categoryRateBox}>
+                <View style={styles.rateBoxHeader}>
+                  <Ionicons name="checkmark-circle" size={18} color={Colors.brand} />
+                  <Text style={styles.categoryRateLabel}>Category Rate: ₹{editSelectedCategoryRate}</Text>
+                </View>
+                <Text style={styles.categoryRateNote}>Auto-filled for all variants (editable)</Text>
+              </View>
+            )}
+            {!editSelectedCategoryRate && (
+              <View style={styles.rateRequiredBox}>
+                <Ionicons name="alert-circle" size={18} color={Colors.warning} />
+                <Text style={styles.rateRequiredText}>Enter rate for each variant</Text>
+              </View>
+            )}
+
+            <SearchInput
+              placeholder="Search variants..."
+              value={editVariantSearch}
+              onChangeText={handleEditVariantSearch}
+            />
+
+            <Text style={styles.subLabel}>SELECT VARIANTS & ENTER QUANTITY</Text>
+            <FlatList
+              data={editFilteredVariants}
+              keyExtractor={item => item.id}
+              scrollEnabled
+              renderItem={({ item }) => {
+                const selection = editVariantSelections.find((v: any) => v.productId === item.id);
+                return (
+                  <View style={styles.variantCheckRow}>
+                    <TouchableOpacity
+                      style={styles.checkboxArea}
+                      onPress={() => toggleEditVariantSelection(item.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.checkbox, selection?.selected && styles.checkboxChecked]}>
+                        {selection?.selected && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                      </View>
+                      <Text style={styles.variantLabel}>{item.size}</Text>
+                    </TouchableOpacity>
+
+                    {selection?.selected && (
+                      <View style={styles.inputRow}>
+                        <TextInput
+                          style={[styles.smallInput, styles.qtyInput]}
+                          placeholder="Qty"
+                          placeholderTextColor={Colors.textSecondary}
+                          value={selection.quantity}
+                          onChangeText={(val) => updateEditVariantField(item.id, 'quantity', val)}
+                          keyboardType="number-pad"
+                        />
+                        <TextInput
+                          style={[styles.smallInput, styles.rateInput, editSelectedCategoryRate && styles.rateInputAuto]}
+                          placeholder="Rate"
+                          placeholderTextColor={Colors.textSecondary}
+                          value={selection.rate}
+                          onChangeText={(val) => updateEditVariantField(item.id, 'rate', val)}
+                          keyboardType="decimal-pad"
+                          editable={true}
+                        />
+                      </View>
+                    )}
+                  </View>
+                );
+              }}
+            />
+
+            <TouchableOpacity
+              style={styles.addVariantsBtn}
+              onPress={handleEditAddVariants}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="checkmark-circle" size={20} color={Colors.textInverse} />
+              <Text style={styles.addVariantsText}>Add All Selected</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -402,6 +901,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   section: { padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border },
   partyName: { fontSize: FontSize.xxl, fontWeight: '900', color: Colors.text },
+  locationText: { fontSize: FontSize.md, color: Colors.textSecondary, marginTop: Spacing.xs },
   statusBadge: { alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, marginTop: Spacing.sm },
   statusBadgeText: { fontSize: FontSize.sm, fontWeight: '700', letterSpacing: 0.5 },
   sectionLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.md },
@@ -444,12 +944,58 @@ const styles = StyleSheet.create({
   cancelText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textSecondary },
   saveBtn: { flex: 1, backgroundColor: Colors.brand, borderRadius: 12, height: 48, justifyContent: 'center', alignItems: 'center' },
   saveText: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textInverse },
-  // Items
-  itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.sm },
-  itemInfo: { flex: 1 },
-  itemAlias: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
-  itemSize: { fontSize: FontSize.sm, color: Colors.textSecondary, marginVertical: 2 },
-  itemPrintName: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: Spacing.xs },
-  itemQuantity: { backgroundColor: Colors.brand, borderRadius: 20, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, minWidth: 50, alignItems: 'center' },
-  itemQtyBadge: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textInverse },
+  // Category Items
+  categoryCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.md },
+  categoryName: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.md },
+  variantsList: { gap: Spacing.sm },
+  variantItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.bgSecondary, borderRadius: 6, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, gap: Spacing.md },
+  variantSize: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, flex: 1 },
+  variantRate: { fontSize: FontSize.sm, color: Colors.brand, fontWeight: '700', minWidth: 60, textAlign: 'right' },
+  variantQtyCenter: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, textAlign: 'center', minWidth: 50 },
+  // Gowdown Boxes in Modal
+  gowdownBoxes: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.md },
+  gowdownBox: { flex: 1, backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.border, borderRadius: 12, paddingVertical: Spacing.md, paddingHorizontal: Spacing.sm, alignItems: 'center', gap: Spacing.xs },
+  gowdownBoxSelected: { borderColor: Colors.brand, borderWidth: 2, backgroundColor: Colors.brand + '08' },
+  gowdownBoxText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, textAlign: 'center' },
+  gowdownBoxTextSelected: { color: Colors.brand, fontWeight: '700' },
+  // Category Modal Styles
+  categoryRateInputSection: { backgroundColor: Colors.brand + '08', borderRadius: 8, padding: Spacing.md, marginBottom: Spacing.lg, borderWidth: 1, borderColor: Colors.brand + '20' },
+  rateInputHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  categoryRateInputLabel: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text },
+  categoryRateInputHint: { fontSize: FontSize.xs, color: Colors.textSecondary, marginBottom: Spacing.sm },
+  categoryRateInputField: { borderWidth: 1, borderColor: Colors.brand, borderRadius: 10, paddingHorizontal: Spacing.md, height: 44, fontSize: FontSize.md, color: Colors.text, backgroundColor: Colors.bg, shadowColor: Colors.brand, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 2, elevation: 1 },
+  categoryOptionRow: { borderBottomWidth: 1, borderBottomColor: Colors.border },
+  categoryOption: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
+  categoryOptionText: { fontSize: FontSize.md, color: Colors.text, fontWeight: '500' },
+  categoryRateBox: { backgroundColor: Colors.brand + '10', borderRadius: 8, padding: Spacing.md, marginBottom: Spacing.lg, borderLeftWidth: 3, borderLeftColor: Colors.brand },
+  categoryRateLabel: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.brand, flex: 1 },
+  categoryRateNote: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: Spacing.xs, marginLeft: Spacing.lg },
+  rateRequiredBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.warning + '10', borderRadius: 8, padding: Spacing.md, marginBottom: Spacing.lg, gap: Spacing.sm, borderLeftWidth: 3, borderLeftColor: Colors.warning },
+  rateRequiredText: { fontSize: FontSize.sm, color: Colors.warning, fontWeight: '600', flex: 1 },
+  subLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.sm },
+  variantCheckRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border, gap: Spacing.md },
+  checkboxArea: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: Spacing.sm },
+  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: Colors.border, justifyContent: 'center', alignItems: 'center' },
+  checkboxChecked: { backgroundColor: Colors.brand, borderColor: Colors.brand },
+  variantLabel: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text },
+  inputRow: { flexDirection: 'row', gap: Spacing.sm },
+  smallInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: 6, paddingHorizontal: Spacing.sm, height: 36, fontSize: FontSize.sm, color: Colors.text, backgroundColor: Colors.bg },
+  qtyInput: { width: 50 },
+  rateInput: { width: 60 },
+  rateInputAuto: { backgroundColor: Colors.brand + '08', borderColor: Colors.brand },
+  addVariantsBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 8, height: 48, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.lg, marginBottom: Spacing.lg },
+  addVariantsText: { color: Colors.textInverse, fontSize: FontSize.md, fontWeight: '700' },
+  addCategoryBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 8, height: 48, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm, marginVertical: Spacing.lg },
+  addCategoryText: { color: Colors.textInverse, fontSize: FontSize.md, fontWeight: '700' },
+  // Modal styles - EXACT replica from create.tsx
+  modal: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalHeaderContent: { flex: 1, backgroundColor: Colors.bg, marginTop: 'auto', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.lg, maxHeight: '90%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg },
+  categoryCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.md },
+  removeCategoryBtn: { padding: Spacing.xs },
+  removeVariantBtn: { paddingLeft: Spacing.sm },
+  variantItemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.bgSecondary, borderRadius: 6, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, gap: Spacing.md },
+  variantItemInfo: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flex: 1 },
+  emptyText: { fontSize: FontSize.sm, color: Colors.textSecondary, fontStyle: 'italic', paddingVertical: Spacing.lg },
+  categoryRateTag: { fontSize: FontSize.xs, color: Colors.brand, fontWeight: '700', marginTop: Spacing.xs, marginBottom: Spacing.md, backgroundColor: Colors.brand + '15', paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: 4, alignSelf: 'flex-start' },
 });

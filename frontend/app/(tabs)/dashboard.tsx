@@ -26,6 +26,8 @@ interface Order {
   totalParcels: number;
   readinessStatus: string;
   dispatched: boolean;
+  godown: string;
+  createdAt: string;
 }
 
 function StatCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: string }) {
@@ -72,13 +74,27 @@ export default function DashboardScreen() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [statsData, ordersData] = await Promise.all([
+      const [statsData, sundhOrdersData, lalShivOrdersData] = await Promise.all([
         api.get('/dashboard/stats'),
-        api.get('/orders'),
+        api.get('/orders?godown=Sundha'),
+        api.get('/orders?godown=Lal-Shivnagar'),
       ]);
       setStats(statsData);
-      setRecentOrders(ordersData.slice(0, 8));
-    } catch {} finally {
+
+      // Merge orders and filter for past 48 hours
+      const allOrders = [...(sundhOrdersData || []), ...(lalShivOrdersData || [])];
+      const now = new Date();
+      const past48Hours = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+
+      const recentOrders = allOrders
+        .filter((order: Order) => new Date(order.createdAt) >= past48Hours)
+        .sort((a: Order, b: Order) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 10);
+
+      setRecentOrders(recentOrders);
+    } catch (e: any) {
+      console.error('Error fetching dashboard data:', e);
+    } finally {
       setLoading(false);
       setRefreshing(false);
     }
@@ -129,16 +145,13 @@ export default function DashboardScreen() {
         )}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Orders</Text>
-          <TouchableOpacity testID="view-all-orders-btn" onPress={() => router.push('/(tabs)/orders')} activeOpacity={0.7}>
-            <Text style={styles.viewAll}>View All</Text>
-          </TouchableOpacity>
+          <Text style={styles.sectionTitle}>Recent Orders (Last 48h)</Text>
         </View>
 
         {recentOrders.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="cube-outline" size={48} color={Colors.border} />
-            <Text style={styles.emptyText}>No orders yet</Text>
+            <Text style={styles.emptyText}>No orders in the last 48 hours</Text>
           </View>
         ) : (
           recentOrders.map(order => (
@@ -146,19 +159,20 @@ export default function DashboardScreen() {
           ))
         )}
 
-        {user?.role === 'admin' && (
-          <TouchableOpacity
-            testID="create-order-fab"
-            style={styles.fab}
-            onPress={() => router.push('/order/create')}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="add" size={24} color={Colors.textInverse} />
-            <Text style={styles.fabText}>New Order</Text>
-          </TouchableOpacity>
-        )}
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* Floating Action Button - Always Visible */}
+      {user?.role === 'admin' && (
+        <TouchableOpacity
+          testID="create-order-fab"
+          style={styles.floatingBtn}
+          onPress={() => router.push('/order/create')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add" size={28} color={Colors.textInverse} />
+        </TouchableOpacity>
+      )}
     </SafeAreaView>
   );
 }
@@ -178,7 +192,6 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.xl, paddingTop: Spacing.xl, paddingBottom: Spacing.md },
   sectionTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text },
-  viewAll: { fontSize: FontSize.sm, color: Colors.info, fontWeight: '600' },
   orderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: Spacing.lg, padding: Spacing.lg, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, marginBottom: Spacing.sm },
   orderLeft: { flex: 1 },
   orderId: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.brand },
@@ -189,6 +202,5 @@ const styles = StyleSheet.create({
   parcelsText: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 4 },
   empty: { alignItems: 'center', paddingVertical: Spacing.xxl },
   emptyText: { fontSize: FontSize.md, color: Colors.textSecondary, marginTop: Spacing.sm },
-  fab: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.brand, borderRadius: 12, marginHorizontal: Spacing.xl, marginTop: Spacing.lg, height: 52, gap: Spacing.sm },
-  fabText: { color: Colors.textInverse, fontSize: FontSize.lg, fontWeight: '700' },
+  floatingBtn: { position: 'absolute', bottom: Spacing.xl + 90, right: Spacing.lg, width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.brand, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 },
 });
