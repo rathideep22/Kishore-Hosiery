@@ -93,19 +93,16 @@ export default function DashboardScreen() {
       ]);
       setStats(statsData);
 
-      // Merge orders and filter for past 48 hours
+      // Merge all orders from both godowns
       const allOrders = [...(sundhOrdersData || []), ...(lalShivOrdersData || [])];
-      const now = new Date();
-      const past48Hours = new Date(now.getTime() - 48 * 60 * 60 * 1000);
 
       const isAdmin = user?.role === 'admin';
       const recentOrders = allOrders
         .filter((order: Order) => {
-          const isWithin48Hours = new Date(order.createdAt) >= past48Hours;
           if (isAdmin) {
-            return isWithin48Hours; // Admin sees all orders from last 48 hours
+            return true; // Admin sees all orders
           }
-          return !order.dispatched && isWithin48Hours; // Staff sees only non-dispatched
+          return !order.dispatched; // Staff sees only non-dispatched
         })
         .sort((a: Order, b: Order) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .slice(0, 10);
@@ -181,13 +178,13 @@ export default function DashboardScreen() {
         )}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Orders (Last 48h)</Text>
+          <Text style={styles.sectionTitle}>Recent Orders</Text>
         </View>
 
         {recentOrders.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="cube-outline" size={48} color={Colors.border} />
-            <Text style={styles.emptyText}>No orders in the last 48 hours</Text>
+            <Text style={styles.emptyText}>No active orders</Text>
           </View>
         ) : (
           recentOrders.map(order => (
