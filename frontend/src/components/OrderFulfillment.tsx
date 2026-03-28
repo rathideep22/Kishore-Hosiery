@@ -4,6 +4,7 @@ import {
   ActivityIndicator, Dimensions, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { api } from '../utils/api';
 import { Colors, FontSize, Spacing } from '../constants/theme';
 
@@ -40,6 +41,7 @@ export function OrderFulfillment({
   onUpdate: (updatedItems: OrderItem[]) => void;
   isAdmin?: boolean;
 }) {
+  const router = useRouter();
   const [saving, setSaving] = useState<string | null>(null);
   const [inputValues, setInputValues] = useState<Record<string, string>>({}); // Local input state for unsynced typing
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({}); // Track which categories are expanded
