@@ -36,6 +36,7 @@ function RootNavigator() {
         <Stack.Screen name="all-orders" options={{ presentation: 'card' }} />
         <Stack.Screen name="dispatch" options={{ presentation: 'card' }} />
         <Stack.Screen name="order/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="order/[id]/view-category/[categoryId]" options={{ presentation: 'card' }} />
         <Stack.Screen name="order/create" options={{ presentation: 'card' }} />
       </Stack>
     </>
