@@ -56,10 +56,6 @@ export default function OrderDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
 
-  // Godown modal
-  const [showGodown, setShowGodown] = useState(false);
-  const [godownName, setGodownName] = useState('');
-  const [godownParcels, setGodownParcels] = useState('');
 
   // Edit modal
   const [showEdit, setShowEdit] = useState(false);
@@ -133,25 +129,6 @@ export default function OrderDetailScreen() {
         },
       },
     ]);
-  };
-
-  const addGodownEntry = async () => {
-    if (!godownName.trim() || !godownParcels || parseInt(godownParcels) <= 0) {
-      Alert.alert('Error', 'Enter godown name and valid parcel count');
-      return;
-    }
-    setActionLoading('godown');
-    try {
-      const data = await api.put(`/orders/${id}/godown`, {
-        godown: godownName.trim(),
-        readyParcels: parseInt(godownParcels),
-      });
-      setOrder(data);
-      setShowGodown(false);
-      setGodownName('');
-      setGodownParcels('');
-    } catch (e: any) { Alert.alert('Error', e.message); }
-    finally { setActionLoading(''); }
   };
 
   const saveEdit = async () => {
@@ -564,46 +541,6 @@ export default function OrderDetailScreen() {
           )}
 
 
-          {/* Godown Distribution */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionLabel}>GODOWN PARCELS</Text>
-              <TouchableOpacity testID="add-godown-btn" onPress={() => setShowGodown(true)} style={styles.addGodownBtn} activeOpacity={0.7}>
-                <Ionicons name="add" size={18} color={Colors.textInverse} />
-                <Text style={styles.addGodownText}>Add</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Progress Bar */}
-            <View style={styles.progressWrap}>
-              <View style={styles.progressBar}>
-                <View style={[styles.progressFill, { width: `${Math.min(readyPercent, 100)}%`, backgroundColor: readyPercent >= 100 ? Colors.success : Colors.warning }]} />
-              </View>
-              <Text style={styles.progressText}>{totalReady}/{order.totalParcels} parcels ready</Text>
-            </View>
-
-            {order.godownDistribution.length === 0 ? (
-              <Text style={styles.emptyGodown}>No godown entries yet. Tap "Add" to update.</Text>
-            ) : (
-              order.godownDistribution.map((g, i) => (
-                <View key={i} style={styles.godownRow}>
-                  <View style={styles.godownLeft}>
-                    <Ionicons name="business-outline" size={18} color={Colors.textSecondary} />
-                    <Text style={styles.godownName}>{g.godown}</Text>
-                  </View>
-                  <Text style={styles.godownParcels}>{g.readyParcels} parcels</Text>
-                </View>
-              ))
-            )}
-
-            {remaining > 0 && !order.dispatched && (
-              <View style={styles.pendingBox}>
-                <Ionicons name="alert-circle" size={16} color={Colors.warning} />
-                <Text style={styles.pendingText}>{remaining} parcels pending</Text>
-              </View>
-            )}
-          </View>
-
           {/* Dispatch */}
           <View style={styles.section}>
             <TouchableOpacity
@@ -635,42 +572,6 @@ export default function OrderDetailScreen() {
           </ScrollView>
         )}
       </KeyboardAvoidingView>
-
-      {/* Godown Modal */}
-      <Modal visible={showGodown} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Godown Entry</Text>
-            <Text style={styles.modalLabel}>GODOWN NAME</Text>
-            <TextInput
-              testID="godown-name-input"
-              style={styles.modalInput}
-              placeholder="e.g. G1, Warehouse A"
-              placeholderTextColor={Colors.textSecondary}
-              value={godownName}
-              onChangeText={setGodownName}
-            />
-            <Text style={styles.modalLabel}>READY PARCELS</Text>
-            <TextInput
-              testID="godown-parcels-input"
-              style={styles.modalInput}
-              placeholder="Number of parcels"
-              placeholderTextColor={Colors.textSecondary}
-              value={godownParcels}
-              onChangeText={setGodownParcels}
-              keyboardType="number-pad"
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity testID="godown-cancel-btn" style={styles.cancelBtn} onPress={() => setShowGodown(false)} activeOpacity={0.7}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity testID="godown-save-btn" style={styles.saveBtn} onPress={addGodownEntry} disabled={actionLoading === 'godown'} activeOpacity={0.7}>
-                {actionLoading === 'godown' ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveText}>Save</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Edit Modal */}
       <Modal visible={showEdit} transparent animationType="slide">
