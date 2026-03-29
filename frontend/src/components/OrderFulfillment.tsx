@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
   ActivityIndicator, Dimensions, Alert, Animated, Keyboard,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api } from '../utils/api';
@@ -44,6 +45,7 @@ export function OrderFulfillment({
   isAdmin?: boolean;
 }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState<string | null>(null);
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
   const [serialValues, setSerialValues] = useState<Record<string, string>>({});
@@ -410,7 +412,7 @@ export function OrderFulfillment({
           </TouchableOpacity>
         </View>
 
-        <View style={{ height: 280 }} />
+        <View style={{ height: Math.max(280, insets.bottom + 100) }} />
       </ScrollView>
 
       {/* ── Bottom Entry Panel ── */}
