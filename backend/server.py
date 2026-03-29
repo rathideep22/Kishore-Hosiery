@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Header, Query
+from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Header, Query, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -518,7 +518,13 @@ async def update_godown(order_id: str, req: GodownUpdateRequest, user: dict = De
 
 
 @api_router.put("/orders/{order_id}/dispatch")
-async def toggle_dispatch(order_id: str, user: dict = Depends(get_auth_user)):
+async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(get_auth_user)):
+    try:
+        body = await request.json()
+        dispatch_note = body.get("dispatchNote", "")
+    except Exception:
+        dispatch_note = ""
+        
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -547,12 +553,14 @@ async def toggle_dispatch(order_id: str, user: dict = Depends(get_auth_user)):
                     "rate": item.get('rate')
                 })
 
-        # If there are remaining items, create a new order
         if remaining_items:
-            new_order_id = f"{order['orderId']}-REM-{datetime.now(timezone.utc).strftime('%s')}"
+            order_num = await get_next_order_id()
+            new_order_id_value = str(uuid.uuid4())
+            new_order_display_id = f"KH-{order_num:04d}"
+            
             new_order = {
-                "id": new_order_id,
-                "orderId": new_order_id,
+                "id": new_order_id_value,
+                "orderId": new_order_display_id,
                 "partyName": order['partyName'],
                 "location": order.get('location', ''),
                 "godown": order['godown'],
@@ -575,8 +583,8 @@ async def toggle_dispatch(order_id: str, user: dict = Depends(get_auth_user)):
             admins = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
             for admin_user in admins:
                 await create_notification(admin_user['id'],
-                    f"System created remainder order {new_order_id} for {order['partyName']} (from {order['orderId']})",
-                    "order_created", new_order_id)
+                    f"System created remainder order {new_order_display_id} for {order['partyName']} (from {order['orderId']})",
+                    "order_created", new_order_id_value)
 
     update_data = {
         "dispatched": new_val,
@@ -584,6 +592,8 @@ async def toggle_dispatch(order_id: str, user: dict = Depends(get_auth_user)):
     }
     if new_val:
         update_data["dispatchedAt"] = datetime.now(timezone.utc).isoformat()
+        if dispatch_note:
+            update_data["dispatchNote"] = dispatch_note
     await db.orders.update_one({"id": order_id}, {"$set": update_data})
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
     await create_audit_log(user['id'], "DISPATCH_UPDATED", order_id,

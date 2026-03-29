@@ -16,12 +16,22 @@ import { getResponsiveTheme } from '../../src/constants/responsiveTheme';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
 
 interface GodownEntry { godown: string; readyParcels: number; }
-interface OrderItem { productId: string; alias: string; category: string; size: string; printName: string; quantity: number; rate?: string; }
+interface OrderItem { 
+  productId: string; 
+  alias: string; 
+  category: string; 
+  size: string; 
+  printName: string; 
+  quantity: number; 
+  rate?: string;
+  fulfillment?: (number | null)[];
+}
 interface Order {
   id: string; orderId: string; partyName: string; location: string; godown: string; message: string;
   totalParcels: number;
   godownDistribution: GodownEntry[]; readinessStatus: string;
   dispatched: boolean; dispatchedAt: string | null;
+  dispatchNote?: string;
   billNo?: string; completed?: boolean; completedAt?: string | null;
   items?: OrderItem[];
   createdByName: string; createdAt: string; updatedAt: string;
@@ -222,13 +232,18 @@ export default function OrderDetailScreen() {
     setEditCategoryProducts(products);
     setEditFilteredVariants(products);
 
-    const initialSelections = products.map((p: any) => ({
-      productId: p.id,
-      size: p.size,
-      quantity: '',
-      rate: editCategoryRateInput,
-      selected: false,
-    }));
+    const existingCategory = editCategoriesInOrder.find(c => c.category === cat);
+
+    const initialSelections = products.map((p: any) => {
+      const existingItem = existingCategory?.items.find((i: any) => i.productId === p.id);
+      return {
+        productId: p.id,
+        size: p.size,
+        quantity: existingItem ? String(existingItem.quantity) : '',
+        rate: existingItem ? String(existingItem.rate || '') : editCategoryRateInput,
+        selected: !!existingItem,
+      };
+    });
     setEditVariantSelections(initialSelections);
 
     setEditVariantSearch('');
@@ -331,7 +346,7 @@ export default function OrderDetailScreen() {
       if (existing) {
         return prev.map((c: any) =>
           c.category === editSelectedCategory
-            ? { ...c, items: [...c.items, ...newItems] }
+            ? { ...c, categoryRate: editSelectedCategoryRate || c.categoryRate, items: newItems }
             : c
         );
       } else {
@@ -348,6 +363,23 @@ export default function OrderDetailScreen() {
     setEditSelectedCategoryRate('');
     setEditVariantSelections([]);
     setEditCategoryProducts([]);
+  };
+
+  const handleEditItemUpdate = (categoryName: string, productId: string, field: 'quantity' | 'rate', value: string) => {
+    setEditCategoriesInOrder((prev: any) =>
+      prev.map((c: any) =>
+        c.category === categoryName
+          ? {
+              ...c,
+              items: c.items.map((i: any) =>
+                i.productId === productId
+                  ? { ...i, [field]: field === 'quantity' ? (parseInt(value) || 0) : value }
+                  : i
+              ),
+            }
+          : c
+      )
+    );
   };
 
   const handleEditRemoveVariant = (categoryName: string, productId: string) => {
@@ -417,7 +449,7 @@ export default function OrderDetailScreen() {
         try {
           const productsData = await api.get('/products');
           setAllProducts(productsData);
-          const uniqueCategories = [...new Set(productsData.map((p: any) => p.category))].sort();
+          const uniqueCategories = Array.from(new Set(productsData.map((p: any) => p.category))).sort() as string[];
           setCategories(uniqueCategories);
           setEditFilteredCategories(uniqueCategories);
         } catch (e: any) {
@@ -495,7 +527,7 @@ export default function OrderDetailScreen() {
                 totalParcels={order.totalParcels}
                 onUpdate={(updatedItems) => {
                   // Update order items immediately from API response
-                  setOrder(prev => ({ ...prev, items: updatedItems }));
+                  setOrder(prev => prev ? { ...prev, items: updatedItems } : null);
                 }}
                 isAdmin={isAdmin}
               />
@@ -560,13 +592,38 @@ export default function OrderDetailScreen() {
 
                       {/* Variants List View */}
                       <View style={styles.variantsList}>
-                        {items.map((item, idx) => (
-                          <View key={idx} style={styles.variantItem}>
-                            <Text style={styles.variantSize}>{item.size}</Text>
-                            <Text style={styles.variantQtyCenter}>{item.quantity}x</Text>
-                            {item.rate && <Text style={styles.variantRate}>₹{item.rate}</Text>}
-                          </View>
-                        ))}
+                        {/* Headers */}
+                        <View style={[styles.variantItem, { backgroundColor: 'transparent', paddingHorizontal: 0, paddingVertical: 4, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: Colors.border, borderRadius: 0 }]}>
+                          <Text style={[styles.variantSize, { color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]}>VARIANT</Text>
+                          {order.dispatched && (isAdmin || isAccountant) ? (
+                            <>
+                              <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]}>PARCELS</Text>
+                              <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]}>WEIGHT</Text>
+                            </>
+                          ) : (
+                            <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]}>QTY</Text>
+                          )}
+                          <Text style={[styles.variantRate, { color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]}>RATE</Text>
+                        </View>
+                        {items.map((item, idx) => {
+                          const fulfilledQty = (item.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length;
+                          const totalWeight = (item.fulfillment || []).reduce((sum: number, w: any) => sum + (w || 0), 0).toFixed(2);
+                          
+                          return (
+                            <View key={idx} style={styles.variantItem}>
+                              <Text style={styles.variantSize}>{item.size}</Text>
+                              {order.dispatched && (isAdmin || isAccountant) ? (
+                                <>
+                                  <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center' }]}>{fulfilledQty}</Text>
+                                  <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center' }]}>{totalWeight}kg</Text>
+                                </>
+                              ) : (
+                                <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center' }]}>{item.quantity}</Text>
+                              )}
+                              {item.rate && <Text style={styles.variantRate}>₹{item.rate}</Text>}
+                            </View>
+                          );
+                        })}
                       </View>
                     </View>
                   );
@@ -576,6 +633,16 @@ export default function OrderDetailScreen() {
           )}
 
 
+
+          {/* Dispatch Note - visible to admin and accountant */}
+          {order.dispatchNote && (isAdmin || isAccountant) && (
+             <View style={styles.section}>
+               <Text style={styles.sectionLabel}>DISPATCH NOTE</Text>
+               <View style={styles.messageBox}>
+                 <Text style={styles.messageText}>{order.dispatchNote}</Text>
+               </View>
+             </View>
+          )}
 
           {/* Bill No Section - for dispatched orders, visible to admin and accountant */}
           {order.dispatched && (isAdmin || isAccountant) && (
@@ -632,7 +699,12 @@ export default function OrderDetailScreen() {
       <Modal visible={showEdit} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-            <Text style={styles.modalTitle}>Edit Order</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={[styles.modalTitle, { marginBottom: 0 }]}>Edit Order</Text>
+              <TouchableOpacity testID="edit-close-icon-btn" onPress={() => setShowEdit(false)} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                <Ionicons name="close" size={28} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.modalLabel}>PARTY NAME</Text>
             <TextInput testID="edit-party-input" style={styles.modalInput} value={editParty} onChangeText={setEditParty} />
             <Text style={styles.modalLabel}>LOCATION</Text>
@@ -681,17 +753,29 @@ export default function OrderDetailScreen() {
                   <View style={styles.variantsList}>
                     {catInOrder.items.map((item: OrderItem, idx: number) => (
                       <View key={idx} style={styles.variantItemRow}>
-                        <View style={styles.variantItemInfo}>
-                          <Text style={styles.variantSize}>{item.size}</Text>
-                          <Text style={styles.variantQtyCenter}>{item.quantity}x</Text>
-                          {item.rate && <Text style={styles.variantRate}>₹{item.rate}</Text>}
+                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={[styles.variantSize, { flex: 1 }]}>{item.size}</Text>
+                          <TextInput
+                            style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 6, width: 45, height: 32, fontSize: 13, backgroundColor: Colors.bg, color: Colors.text, textAlign: 'center' }}
+                            value={String(item.quantity || '')}
+                            onChangeText={(val) => handleEditItemUpdate(catInOrder.category, item.productId, 'quantity', val)}
+                            keyboardType="number-pad"
+                            placeholder="Qty"
+                          />
+                          <TextInput
+                            style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 6, width: 55, height: 32, fontSize: 13, backgroundColor: Colors.bg, color: Colors.text, textAlign: 'center' }}
+                            value={String(item.rate || '')}
+                            onChangeText={(val) => handleEditItemUpdate(catInOrder.category, item.productId, 'rate', val)}
+                            keyboardType="decimal-pad"
+                            placeholder="Rate"
+                          />
                         </View>
                         <TouchableOpacity
                           onPress={() => handleEditRemoveVariant(catInOrder.category, item.productId)}
-                          style={styles.removeVariantBtn}
+                          style={{ padding: 4 }}
                           activeOpacity={0.7}
                         >
-                          <Ionicons name="close" size={16} color={Colors.danger} />
+                          <Ionicons name="trash-outline" size={18} color={Colors.danger} />
                         </TouchableOpacity>
                       </View>
                     ))}
@@ -797,7 +881,7 @@ export default function OrderDetailScreen() {
 
             {editSelectedCategoryRate && (
               <View style={styles.categoryRateBox}>
-                <View style={styles.rateBoxHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
                   <Ionicons name="checkmark-circle" size={18} color={Colors.brand} />
                   <Text style={styles.categoryRateLabel}>Category Rate: ₹{editSelectedCategoryRate}</Text>
                 </View>
@@ -1032,7 +1116,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
     alignItems: 'center',
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surface,
   },
   tableCell: {
     fontSize: FontSize.xs,
@@ -1054,7 +1138,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginLeft: Spacing.xs,
   },
-  statusBadgeText: {
+  statusBadgeTextSmall: {
     fontSize: FontSize.xs,
     fontWeight: '600',
   },

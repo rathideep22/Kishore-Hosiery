@@ -21,6 +21,8 @@ const STATUS_FILTERS = [
   { key: 'partial', label: 'Partial' },
   { key: 'ready', label: 'Ready' },
   { key: 'dispatched', label: 'Dispatched' },
+  { key: 'bill_generated', label: 'Bill Generated' },
+  { key: 'completed', label: 'Completed' },
 ];
 
 const GODOWN_FILTERS = [
@@ -43,6 +45,8 @@ interface Order {
   readinessStatus: string;
   dispatched: boolean;
   godown: string;
+  completed?: boolean;
+  completedAt?: string | null;
   items?: OrderItem[];
   godownDistribution: { godown: string; readyParcels: number }[];
   createdAt: string;
@@ -92,10 +96,12 @@ export default function AllOrdersScreen() {
     // Status filter
     if (status) {
       filtered = filtered.filter(order => {
-        if (status === 'pending') return !order.dispatched && order.readinessStatus === 'Pending';
-        if (status === 'partial') return !order.dispatched && order.readinessStatus === 'Partial Ready';
-        if (status === 'ready') return !order.dispatched && order.readinessStatus === 'Ready';
-        if (status === 'dispatched') return order.dispatched;
+        if (status === 'completed') return order.completed;
+        if (status === 'bill_generated') return !order.completed && order.readinessStatus === 'Bill Generated';
+        if (status === 'pending') return !order.completed && !order.dispatched && order.readinessStatus === 'Pending';
+        if (status === 'partial') return !order.completed && !order.dispatched && order.readinessStatus === 'Partial Ready';
+        if (status === 'ready') return !order.completed && !order.dispatched && order.readinessStatus === 'Ready';
+        if (status === 'dispatched') return !order.completed && order.dispatched && order.readinessStatus !== 'Bill Generated';
         return true;
       });
     } else {
@@ -152,6 +158,8 @@ export default function AllOrdersScreen() {
 
 
   const getStatusColor = (order: Order) => {
+    if (order.completed) return Colors.success;
+    if (order.readinessStatus === 'Bill Generated') return Colors.info;
     if (order.dispatched) return Colors.textSecondary;
     if (order.readinessStatus === 'Ready') return Colors.success;
     if (order.readinessStatus === 'Partial Ready') return Colors.warning;
@@ -176,12 +184,16 @@ export default function AllOrdersScreen() {
     >
       <View style={styles.cardTop}>
         <Text style={styles.partyName}>{item.partyName}</Text>
-        <View style={[styles.statusDot, { backgroundColor: getStatusColor(item) }]} />
       </View>
-      <View style={[styles.cardMeta, isSmallPhone && { gap: Spacing.sm }]}>
+      <View style={[styles.cardMeta, isSmallPhone && { gap: Spacing.sm }, { alignItems: 'center' }]}>
         <View style={styles.metaItem}>
           <Ionicons name="cube-outline" size={14} color={Colors.textSecondary} />
           <Text style={styles.metaText}>{getReadySummary(item)} parcels</Text>
+        </View>
+        <View style={[{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, marginLeft: 'auto' }, { backgroundColor: getStatusColor(item) + '20' }]}>
+          <Text style={[{ fontSize: 10, fontWeight: '700', textTransform: 'uppercase' }, { color: getStatusColor(item) }]}>
+            {item.completed ? 'COMPLETED' : item.readinessStatus === 'Bill Generated' ? 'BILL GENERATED' : item.dispatched ? 'DISPATCHED' : item.readinessStatus}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>

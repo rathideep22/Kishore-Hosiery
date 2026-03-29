@@ -88,7 +88,7 @@ export default function CreateOrderScreen() {
         api.get('/gowdowns'),
       ]);
       setAllProducts(productsData);
-      const uniqueCategories = [...new Set(productsData.map((p: Product) => p.category))].sort();
+      const uniqueCategories = Array.from(new Set(productsData.map((p: Product) => p.category))).sort() as string[];
       setCategories(uniqueCategories);
       setFilteredCategories(uniqueCategories);
       console.log('📦 Gowdowns fetched:', gowdownsData);
@@ -124,14 +124,18 @@ export default function CreateOrderScreen() {
     setCategoryProducts(products);
     setFilteredVariants(products);
 
-    // Initialize variant selections with category rate pre-filled
-    const initialSelections = products.map(p => ({
-      productId: p.id,
-      size: p.size,
-      quantity: '',
-      rate: categoryRateInput, // Auto-fill with category rate
-      selected: false,
-    }));
+    // Initialize variant selections with existing filled values if present
+    const existingCategory = categoriesInOrder.find(c => c.category === cat);
+    const initialSelections = products.map(p => {
+      const existingItem = existingCategory?.items.find((i: any) => i.productId === p.id);
+      return {
+        productId: p.id,
+        size: p.size,
+        quantity: existingItem ? String(existingItem.quantity) : '',
+        rate: existingItem ? String(existingItem.rate || '') : categoryRateInput,
+        selected: !!existingItem,
+      };
+    });
     setVariantSelections(initialSelections);
 
     setVariantSearch('');
@@ -236,7 +240,7 @@ export default function CreateOrderScreen() {
       if (existing) {
         return prev.map(c =>
           c.category === selectedCategory
-            ? { ...c, items: [...c.items, ...newItems] }
+            ? { ...c, categoryRate: selectedCategoryRate || c.categoryRate, items: newItems }
             : c
         );
       } else {
@@ -245,6 +249,23 @@ export default function CreateOrderScreen() {
     });
 
     handleCloseVariantModal();
+  };
+
+  const handleUpdateItem = (categoryName: string, productId: string, field: 'quantity' | 'rate', value: string) => {
+    setCategoriesInOrder(prev =>
+      prev.map(c =>
+        c.category === categoryName
+          ? {
+              ...c,
+              items: c.items.map(i =>
+                i.productId === productId
+                  ? { ...i, [field]: field === 'quantity' ? (parseInt(value) || 0) : value }
+                  : i
+              ),
+            }
+          : c
+      )
+    );
   };
 
   const handleRemoveVariant = (categoryName: string, productId: string) => {
@@ -400,10 +421,31 @@ export default function CreateOrderScreen() {
                 {catInOrder.categoryRate && <Text style={styles.categoryRateTag}>Rate: ₹{catInOrder.categoryRate}</Text>}
                 <View style={styles.variantsList}>
                   {catInOrder.items.map(item => (
-                    <View key={item.productId} style={styles.variantItem}>
-                      <Text style={styles.variantSize}>{item.size}</Text>
-                      <Text style={styles.variantQtyCenter}>{item.quantity}x</Text>
-                      {item.rate && <Text style={styles.variantRate}>₹{item.rate}</Text>}
+                    <View key={item.productId} style={[styles.variantItem, { paddingVertical: 4 }]}>
+                      <Text style={[styles.variantSize, { flex: 1 }]}>{item.size}</Text>
+                      <TextInput
+                        style={[styles.smallInput, { width: 45, textAlign: 'center' }]}
+                        value={String(item.quantity || '')}
+                        onChangeText={(val) => handleUpdateItem(catInOrder.category, item.productId, 'quantity', val)}
+                        keyboardType="number-pad"
+                        placeholder="Qty"
+                        placeholderTextColor={Colors.textSecondary}
+                      />
+                      <TextInput
+                        style={[styles.smallInput, { width: 55, textAlign: 'center' }]}
+                        value={String(item.rate || '')}
+                        onChangeText={(val) => handleUpdateItem(catInOrder.category, item.productId, 'rate', val)}
+                        keyboardType="decimal-pad"
+                        placeholder="Rate"
+                        placeholderTextColor={Colors.textSecondary}
+                      />
+                      <TouchableOpacity
+                        onPress={() => handleRemoveVariant(catInOrder.category, item.productId)}
+                        activeOpacity={0.7}
+                        style={{ padding: 4 }}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+                      </TouchableOpacity>
                     </View>
                   ))}
                 </View>
@@ -474,7 +516,7 @@ export default function CreateOrderScreen() {
             />
 
             <View style={styles.categoryRateInputSection}>
-              <View style={styles.rateInputHeader}>
+              <View style={{ marginBottom: 16 }}>
                 <Ionicons name="pricetag" size={16} color={Colors.brand} />
                 <Text style={styles.categoryRateInputLabel}>Set Rate for This Category (Optional)</Text>
               </View>

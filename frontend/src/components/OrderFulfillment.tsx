@@ -89,6 +89,15 @@ export function OrderFulfillment({
       // Update parent with response so UI shows saved values
       if (response.items) {
         onUpdate(response.items);
+        
+        // Auto-close variant if fully fulfilled
+        const updatedItem = response.items.find((i: any) => i.productId === productId);
+        if (updatedItem) {
+          const fulfilled = (updatedItem.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length;
+          if (fulfilled === updatedItem.quantity) {
+             setExpandedVariants(prev => ({...prev, [productId]: false}));
+          }
+        }
       }
 
       // Clear local input state after successful save
@@ -100,6 +109,15 @@ export function OrderFulfillment({
 
       // Auto-focus next parcel input
       setTimeout(() => {
+        // Find the updated item to check if it's fully fulfilled
+        const updatedItem = response.items?.find((i: any) => i.productId === productId);
+        const isFullyFulfilled = updatedItem && (updatedItem.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length === updatedItem.quantity;
+        
+        if (isFullyFulfilled) {
+          // Skip auto-focusing if the variant is closing
+          return;
+        }
+
         const currentParcelIndex = parcelIndex;
         const nextKey = `${productId}-${currentParcelIndex + 1}`;
 

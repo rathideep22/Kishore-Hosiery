@@ -141,7 +141,7 @@ export default function ViewCategoryScreen() {
                 <Text style={styles.summaryLabel}>Total Weight:</Text>
                 <Text style={styles.summaryValue}>
                   {((item.fulfillment || [])
-                    .reduce((sum, w) => sum + (w || 0), 0))
+                    .reduce((sum: number, w) => sum + (w || 0), 0))
                     .toFixed(2)}kg
                 </Text>
               </View>
@@ -170,7 +170,7 @@ export default function ViewCategoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.bg,
   },
   header: {
     flexDirection: 'row',
@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
   infoBox: {
     margin: Spacing.md,
     padding: Spacing.md,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surface,
     borderRadius: 8,
     borderLeftWidth: 4,
     borderLeftColor: Colors.brand,
@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surface,
     borderRadius: 8,
   },
   summaryItem: {

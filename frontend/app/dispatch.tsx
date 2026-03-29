@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, ScrollView,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, ScrollView, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -35,6 +35,7 @@ export default function DispatchScreen() {
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [dispatching, setDispatching] = useState(false);
+  const [dispatchNote, setDispatchNote] = useState('');
 
   // Get godown from route params
   const godown = routeParams.godown || 'All';
@@ -89,7 +90,7 @@ export default function DispatchScreen() {
       setDispatching(true);
       // Dispatch each selected order
       const dispatchPromises = Array.from(selectedOrders).map(orderId =>
-        api.put(`/orders/${orderId}/dispatch`)
+        api.put(`/orders/${orderId}/dispatch`, { dispatchNote: dispatchNote.trim() })
       );
       await Promise.all(dispatchPromises);
 
@@ -199,6 +200,17 @@ export default function DispatchScreen() {
             contentContainerStyle={styles.listContent}
             style={{ flex: 1 }}
           />
+          
+          <View style={{ paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, backgroundColor: Colors.surface, borderTopWidth: 1, borderTopColor: Colors.border }}>
+            <Text style={{ fontSize: FontSize.sm, fontWeight: '700', color: Colors.textSecondary, marginBottom: 8, letterSpacing: 0.5 }}>DISPATCH NOTE (Optional)</Text>
+            <TextInput
+              style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: Spacing.md, height: 48, backgroundColor: Colors.bg, color: Colors.text, fontSize: FontSize.md }}
+              placeholder="e.g. Transport details, LR number, etc."
+              placeholderTextColor={Colors.textSecondary}
+              value={dispatchNote}
+              onChangeText={setDispatchNote}
+            />
+          </View>
 
           <View style={styles.footer}>
             <TouchableOpacity
