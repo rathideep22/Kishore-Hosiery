@@ -22,6 +22,7 @@ interface Order {
   totalParcels: number;
   godownDistribution: GodownEntry[]; readinessStatus: string;
   dispatched: boolean; dispatchedAt: string | null;
+  billNo?: string; completed?: boolean; completedAt?: string | null;
   items?: OrderItem[];
   createdByName: string; createdAt: string; updatedAt: string;
 }
@@ -50,11 +51,14 @@ export default function OrderDetailScreen() {
   const router = useRouter();
   const { user, wsMessage } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const isAccountant = user?.role === 'accountant';
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
+  const [billNo, setBillNo] = useState('');
+  const [savingBill, setSavingBill] = useState(false);
 
 
   // Edit modal
@@ -87,6 +91,7 @@ export default function OrderDetailScreen() {
       const data = await api.get(`/orders/${id}`);
       console.log('Order fetched:', data.id, data.orderId);
       setOrder(data);
+      setBillNo(data.billNo || '');
     } catch (e: any) {
       console.error('Error fetching order:', e);
       Alert.alert('Error', e.message);
@@ -95,6 +100,35 @@ export default function OrderDetailScreen() {
       setRefreshing(false);
     }
   }, [id]);
+
+  const saveBillNo = async () => {
+    if (!billNo.trim()) { Alert.alert('Error', 'Bill number is required'); return; }
+    setSavingBill(true);
+    try {
+      const updated = await api.put(`/orders/${id}/bill`, { billNo: billNo.trim() });
+      setOrder(updated);
+      Alert.alert('Success', 'Bill number saved');
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingBill(false);
+    }
+  };
+
+  const completeOrder = async () => {
+    Alert.alert('Complete Order', 'Mark this order as completed? It will no longer appear in active orders.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Complete', style: 'destructive', onPress: async () => {
+        try {
+          await api.put(`/orders/${id}/complete`);
+          Alert.alert('Done', 'Order completed');
+          router.back();
+        } catch (e: any) {
+          Alert.alert('Error', e.message);
+        }
+      }},
+    ]);
+  };
 
   useEffect(() => { fetchOrder(); }, []);
   useEffect(() => {
@@ -431,7 +465,7 @@ export default function OrderDetailScreen() {
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         {/* STAFF FULFILLMENT VIEW */}
-        {!isAdmin ? (
+        {!isAdmin && !isAccountant ? (
           <View style={{ flex: 1 }}>
             {/* Compact Order Header */}
             <View style={styles.compactHeader}>
@@ -469,7 +503,7 @@ export default function OrderDetailScreen() {
             )}
           </View>
         ) : (
-          /* ADMIN VIEW */
+          /* ADMIN / ACCOUNTANT VIEW */
           <ScrollView
             style={styles.scroll}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchOrder(); }} tintColor={Colors.brand} />}
@@ -478,9 +512,9 @@ export default function OrderDetailScreen() {
             <View style={styles.section}>
               <Text style={styles.partyName}>{order.partyName}</Text>
               <Text style={styles.locationText}>{order.location}</Text>
-              <View style={[styles.statusBadge, { backgroundColor: (order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
-                <Text style={[styles.statusBadgeText, { color: order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
-                  {order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
+              <View style={[styles.statusBadge, { backgroundColor: (order.readinessStatus === 'Bill Generated' ? Colors.brand : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
+                <Text style={[styles.statusBadgeText, { color: order.readinessStatus === 'Bill Generated' ? Colors.brand : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
+                  {order.readinessStatus === 'Bill Generated' ? 'BILL GENERATED' : order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
                 </Text>
               </View>
             </View>
@@ -511,12 +545,12 @@ export default function OrderDetailScreen() {
                     <View key={category} style={styles.categoryCard}>
                       <TouchableOpacity
                         style={styles.categoryHeader}
-                        onPress={() => isAdmin && router.push(`/order/${id}/view-category/${category}`)}
-                        disabled={!isAdmin}
-                        activeOpacity={isAdmin ? 0.7 : 1}
+                        onPress={() => (isAdmin || isAccountant) && router.push(`/order/${id}/view-category/${category}`)}
+                        disabled={!isAdmin && !isAccountant}
+                        activeOpacity={(isAdmin || isAccountant) ? 0.7 : 1}
                       >
                         <Text style={styles.categoryName}>{category}</Text>
-                        {isAdmin && (
+                        {(isAdmin || isAccountant) && (
                           <Ionicons
                             name="chevron-forward"
                             size={18}
@@ -543,6 +577,47 @@ export default function OrderDetailScreen() {
           )}
 
 
+
+          {/* Bill No Section - for dispatched orders, visible to admin and accountant */}
+          {order.dispatched && (isAdmin || isAccountant) && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>BILL NUMBER</Text>
+              <View style={styles.billRow}>
+                <TextInput
+                  style={styles.billInput}
+                  value={billNo}
+                  onChangeText={setBillNo}
+                  placeholder="Enter bill number"
+                  placeholderTextColor={Colors.textSecondary}
+                />
+                <TouchableOpacity
+                  style={[styles.billSaveBtn, savingBill && { opacity: 0.6 }]}
+                  onPress={saveBillNo}
+                  disabled={savingBill}
+                  activeOpacity={0.7}
+                >
+                  {savingBill ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <Text style={styles.billSaveBtnText}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+              {order.billNo && (
+                <Text style={styles.billCurrent}>Current: {order.billNo}</Text>
+              )}
+            </View>
+          )}
+
+          {/* Complete Order - admin only, dispatched orders with bill no */}
+          {isAdmin && order.dispatched && order.billNo && !order.completed && (
+            <View style={styles.section}>
+              <TouchableOpacity style={styles.completeBtn} onPress={completeOrder} activeOpacity={0.7}>
+                <Ionicons name="checkmark-circle" size={22} color="#FFF" />
+                <Text style={styles.completeBtnText}>Complete Order</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Meta */}
             <View style={styles.meta}>
@@ -984,4 +1059,13 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     fontWeight: '600',
   },
+  // Bill No Section
+  billRow: { flexDirection: 'row', gap: Spacing.md, alignItems: 'center' },
+  billInput: { flex: 1, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: Spacing.lg, height: 48, fontSize: FontSize.md, color: Colors.text, backgroundColor: Colors.bg },
+  billSaveBtn: { backgroundColor: Colors.brand, borderRadius: 8, height: 48, paddingHorizontal: Spacing.xl, justifyContent: 'center', alignItems: 'center' },
+  billSaveBtnText: { color: Colors.textInverse, fontSize: FontSize.md, fontWeight: '700' },
+  billCurrent: { fontSize: FontSize.sm, color: Colors.success, fontWeight: '600', marginTop: Spacing.sm },
+  // Complete Order
+  completeBtn: { flexDirection: 'row', backgroundColor: Colors.success, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
+  completeBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
 });

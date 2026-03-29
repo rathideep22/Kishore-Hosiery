@@ -67,6 +67,9 @@ class UpdateOrderRequest(BaseModel):
     totalParcels: Optional[int] = None
     items: Optional[List[OrderProductItem]] = None
 
+class UpdateBillRequest(BaseModel):
+    billNo: str
+
 class GodownUpdateRequest(BaseModel):
     godown: str
     readyParcels: int
@@ -162,6 +165,10 @@ def require_admin(user: dict):
 def require_admin_or_staff(user: dict):
     if user.get('role') not in ['admin', 'staff']:
         raise HTTPException(status_code=403, detail="Admin or staff access required")
+
+def require_admin_or_accountant(user: dict):
+    if user.get('role') not in ['admin', 'accountant']:
+        raise HTTPException(status_code=403, detail="Admin or accountant access required")
 
 # ─── Notification & Audit Helpers ─────────────────────────────────────────────
 
@@ -288,12 +295,22 @@ async def get_orders(
 ):
     conditions = []
     two_days_ago = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
-    conditions.append({
-        "$or": [
-            {"dispatched": False},
-            {"dispatched": True, "dispatchedAt": {"$gte": two_days_ago}}
-        ]
-    })
+    user_role = user.get('role', 'staff')
+
+    # Exclude completed orders from normal views
+    conditions.append({"completed": {"$ne": True}})
+
+    # Accountant: sees all dispatched (non-completed) orders
+    if user_role == 'accountant':
+        conditions.append({"dispatched": True})
+    else:
+        conditions.append({
+            "$or": [
+                {"dispatched": False},
+                {"dispatched": True, "dispatchedAt": {"$gte": two_days_ago}}
+            ]
+        })
+
     if status == 'ready':
         conditions.append({"readinessStatus": "Ready", "dispatched": False})
     elif status == 'partial':
@@ -337,6 +354,9 @@ async def create_order(req: CreateOrderRequest, user: dict = Depends(get_auth_us
         "readinessStatus": "Pending",
         "dispatched": False,
         "dispatchedAt": None,
+        "billNo": None,
+        "completed": False,
+        "completedAt": None,
         "createdBy": user['id'],
         "createdByName": f"{user['firstName']} {user['lastName']}",
         "createdAt": datetime.now(timezone.utc).isoformat(),
@@ -395,6 +415,54 @@ async def update_order(order_id: str, req: UpdateOrderRequest, user: dict = Depe
     await db.orders.update_one({"id": order_id}, {"$set": update})
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
     await create_audit_log(user['id'], "ORDER_UPDATED", order_id, f"Updated order {order['orderId']}")
+    await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
+    return updated
+
+
+@api_router.put("/orders/{order_id}/bill")
+async def update_bill(order_id: str, req: UpdateBillRequest, user: dict = Depends(get_auth_user)):
+    require_admin_or_accountant(user)
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    update = {
+        "billNo": req.billNo,
+        "readinessStatus": "Bill Generated",
+        "updatedAt": datetime.now(timezone.utc).isoformat()
+    }
+    await db.orders.update_one({"id": order_id}, {"$set": update})
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+
+    # Notify admins when accountant adds a bill
+    if user.get('role') == 'accountant':
+        admins = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
+        for admin_user in admins:
+            await create_notification(
+                admin_user['id'],
+                f"Bill #{req.billNo} added to order {order['orderId']} by {user['firstName']}",
+                "bill_added",
+                order['id']
+            )
+
+    await create_audit_log(user['id'], "BILL_UPDATED", order_id, f"Bill {req.billNo} set on {order['orderId']}")
+    await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
+    return updated
+
+
+@api_router.put("/orders/{order_id}/complete")
+async def complete_order(order_id: str, user: dict = Depends(get_auth_user)):
+    require_admin(user)
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    update = {
+        "completed": True,
+        "completedAt": datetime.now(timezone.utc).isoformat(),
+        "updatedAt": datetime.now(timezone.utc).isoformat()
+    }
+    await db.orders.update_one({"id": order_id}, {"$set": update})
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    await create_audit_log(user['id'], "ORDER_COMPLETED", order_id, f"Completed order {order['orderId']}")
     await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
     return updated
 
@@ -743,13 +811,15 @@ async def mark_all_read(user: dict = Depends(get_auth_user)):
 
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats(user: dict = Depends(get_auth_user)):
-    total = await db.orders.count_documents({"dispatched": False})
-    ready = await db.orders.count_documents({"readinessStatus": "Ready", "dispatched": False})
-    partial = await db.orders.count_documents({"readinessStatus": "Partial Ready", "dispatched": False})
-    pending = await db.orders.count_documents({"readinessStatus": "Pending", "dispatched": False})
+    base = {"dispatched": False, "completed": {"$ne": True}}
+    total = await db.orders.count_documents(base)
+    ready = await db.orders.count_documents({**base, "readinessStatus": "Ready"})
+    partial = await db.orders.count_documents({**base, "readinessStatus": "Partial Ready"})
+    pending = await db.orders.count_documents({**base, "readinessStatus": "Pending"})
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     dispatched_today = await db.orders.count_documents({
         "dispatched": True,
+        "completed": {"$ne": True},
         "dispatchedAt": {"$gte": today_start}
     })
     return {

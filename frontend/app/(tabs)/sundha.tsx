@@ -80,8 +80,8 @@ export default function SundhaScreen() {
         return true;
       });
     } else {
-      // Default: admin sees all, staff sees only non-dispatched
-      if (!isAdmin) {
+      // Default: admin/accountant sees all, staff sees only non-dispatched
+      if (!isAdmin && userRole !== 'accountant') {
         filtered = filtered.filter(order => !order.dispatched);
       }
     }
@@ -118,6 +118,7 @@ export default function SundhaScreen() {
   const onRefresh = () => { setRefreshing(true); fetchOrders(); };
 
   const getStatusColor = (order: Order) => {
+    if (order.readinessStatus === 'Bill Generated') return Colors.brand;
     if (order.dispatched) return Colors.textSecondary;
     if (order.readinessStatus === 'Ready') return Colors.success;
     if (order.readinessStatus === 'Partial Ready') return Colors.warning;
@@ -125,6 +126,7 @@ export default function SundhaScreen() {
   };
 
   const getStatusText = (order: Order) => {
+    if (order.readinessStatus === 'Bill Generated') return 'Bill Generated';
     return order.dispatched ? 'Dispatched' : order.readinessStatus;
   };
 

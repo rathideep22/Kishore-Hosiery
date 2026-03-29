@@ -41,6 +41,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 dump.rdb
+*.log
 
 # System files
 .DS_Store
@@ -77,7 +78,16 @@ agenthub/agents/youtube/db
 .cache/
 
 # Mobile development
-android-sdk/ -e 
+android-sdk/
+
+# Expo
+.expo/
+web-build/
+expo-env.d.ts
+
+# Metro bundler
+.metro-health-check*
+
 # Environment files
 *.env
 *.env.*

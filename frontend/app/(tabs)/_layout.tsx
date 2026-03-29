@@ -17,6 +17,7 @@ export default function TabLayout() {
   const { user, unreadCount } = useAuth();
   const { width } = useWindowDimensions();
   const isAdmin = user?.role === 'admin';
+  const isAccountant = user?.role === 'accountant';
   const hideLabels = width < 390;
 
   return (
@@ -33,6 +34,7 @@ export default function TabLayout() {
         name="dashboard"
         options={{
           title: hideLabels ? '' : 'Dashboard',
+          href: '/(tabs)/dashboard',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="grid-outline" size={size} color={color} />
           ),

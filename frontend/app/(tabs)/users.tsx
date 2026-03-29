@@ -126,8 +126,8 @@ export default function UsersScreen() {
     >
       <View style={styles.userCardContent}>
         <View style={styles.userLeft}>
-          <View style={[styles.avatar, item.role === 'admin' ? styles.avatarAdmin : styles.avatarStaff]}>
-            <Ionicons name={item.role === 'admin' ? 'shield' : 'person'} size={18} color={Colors.textInverse} />
+          <View style={[styles.avatar, item.role === 'admin' ? styles.avatarAdmin : item.role === 'accountant' ? styles.avatarAccountant : styles.avatarStaff]}>
+            <Ionicons name={item.role === 'admin' ? 'shield' : item.role === 'accountant' ? 'calculator' : 'person'} size={18} color={Colors.textInverse} />
           </View>
           <View style={styles.userDetails}>
             <Text style={styles.userName}>{item.firstName} {item.lastName}</Text>
@@ -138,9 +138,9 @@ export default function UsersScreen() {
           </View>
         </View>
         <View style={styles.userActions}>
-          <View style={[styles.rolePill, item.role === 'admin' ? styles.adminPill : styles.staffPill]}>
-            <Text style={[styles.roleText, item.role === 'admin' ? styles.adminText : styles.staffText]}>
-              {item.role === 'admin' ? 'ADMIN' : 'STAFF'}
+          <View style={[styles.rolePill, item.role === 'admin' ? styles.adminPill : item.role === 'accountant' ? styles.accountantPill : styles.staffPill]}>
+            <Text style={[styles.roleText, item.role === 'admin' ? styles.adminText : item.role === 'accountant' ? styles.accountantText : styles.staffText]}>
+              {item.role.toUpperCase()}
             </Text>
           </View>
           {item.role !== 'admin' && (
@@ -205,6 +205,14 @@ export default function UsersScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={[styles.roleBtnText, role === 'staff' && styles.roleBtnTextActive]}>Staff</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="role-accountant-btn"
+                style={[styles.roleBtn, role === 'accountant' && styles.roleBtnActive]}
+                onPress={() => setRole('accountant')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.roleBtnText, role === 'accountant' && styles.roleBtnTextActive]}>Accountant</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 testID="role-admin-btn"
@@ -309,6 +317,7 @@ const styles = StyleSheet.create({
   avatar: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   avatarAdmin: { backgroundColor: Colors.brand },
   avatarStaff: { backgroundColor: Colors.info },
+  avatarAccountant: { backgroundColor: Colors.warning },
   avatarText: { color: Colors.textInverse, fontWeight: '700', fontSize: FontSize.sm },
   userDetails: { flex: 1 },
   userMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: Spacing.xs },
@@ -318,9 +327,11 @@ const styles = StyleSheet.create({
   rolePill: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, justifyContent: 'center' },
   adminPill: { backgroundColor: Colors.brand + '18' },
   staffPill: { backgroundColor: Colors.info + '18' },
+  accountantPill: { backgroundColor: Colors.warning + '18' },
   roleText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
   adminText: { color: Colors.brand },
   staffText: { color: Colors.info },
+  accountantText: { color: Colors.warning },
   deleteBtn: { minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.lg },
