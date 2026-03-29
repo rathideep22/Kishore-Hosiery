@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert,
-  ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform, Modal, FlatList, useWindowDimensions,
+  ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform, Modal, FlatList, useWindowDimensions, Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -24,6 +24,8 @@ interface OrderItem {
   printName: string; 
   quantity: number; 
   rate?: string;
+  requireSerialNo?: boolean;
+  serialNumbers?: (string | null)[];
   fulfillment?: (number | null)[];
 }
 interface Order {
@@ -94,6 +96,7 @@ export default function OrderDetailScreen() {
   const [editVariantSearch, setEditVariantSearch] = useState('');
   const [editFilteredVariants, setEditFilteredVariants] = useState<any[]>([]);
   const [editVariantSelections, setEditVariantSelections] = useState<any[]>([]);
+  const [categoryMetas, setCategoryMetas] = useState<Record<string, boolean>>({});
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -109,6 +112,19 @@ export default function OrderDetailScreen() {
       setLoading(false);
       setRefreshing(false);
     }
+    // Also fetch categories and metas for editing
+    try {
+      const prodData = await api.get('/products');
+      setAllProducts(prodData);
+      const uniqueCats = Array.from(new Set(prodData.map((p: any) => p.category))).sort() as string[];
+      setCategories(uniqueCats);
+      setEditFilteredCategories(uniqueCats);
+      
+      const catMetas = await api.get('/products/categories');
+      const map: Record<string, boolean> = {};
+      for (const c of catMetas) { map[c.name] = c.requireSerialNo; }
+      setCategoryMetas(map);
+    } catch (_) {}
   }, [id]);
 
   const saveBillNo = async () => {
@@ -338,6 +354,7 @@ export default function OrderDetailScreen() {
         printName: product.printName,
         quantity: parseInt(selection.quantity),
         rate: editSelectedCategoryRate || selection.rate,
+        requireSerialNo: categoryMetas[editSelectedCategory || ''] ?? false,
       };
     });
 
@@ -608,7 +625,6 @@ export default function OrderDetailScreen() {
                         {items.map((item, idx) => {
                           const fulfilledQty = (item.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length;
                           const totalWeight = (item.fulfillment || []).reduce((sum: number, w: any) => sum + (w || 0), 0).toFixed(2);
-                          
                           return (
                             <View key={idx} style={styles.variantItem}>
                               <Text style={styles.variantSize}>{item.size}</Text>

@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  ActivityIndicator, Dimensions, Alert,
+  ActivityIndicator, Dimensions, Alert, Animated, Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -16,6 +16,8 @@ interface OrderItem {
   printName: string;
   quantity: number;
   rate?: string;
+  requireSerialNo?: boolean;
+  serialNumbers?: (string | null)[];
   fulfillment?: (number | null)[];
 }
 
@@ -25,8 +27,8 @@ interface FulfillmentSummary {
   total: number;
 }
 
-const screenWidth = Dimensions.get('window').width;
-const DEBOUNCE_DELAY = 800; // ms to wait after user stops typing
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const DEBOUNCE_DELAY = 800;
 
 export function OrderFulfillment({
   items = [],
@@ -43,453 +45,342 @@ export function OrderFulfillment({
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState<string | null>(null);
-  const [inputValues, setInputValues] = useState<Record<string, string>>({}); // Local input state for unsynced typing
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({}); // Track which categories are expanded
-  const [expandedVariants, setExpandedVariants] = useState<Record<string, boolean>>({}); // Track which variants are expanded
-  const [tableViewCategory, setTableViewCategory] = useState<string | null>(null); // Track which category is in table view
-  const scrollViewRef = useRef<ScrollView>(null);
+  const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  const [serialValues, setSerialValues] = useState<Record<string, string>>({});
+  // Active slot = {productId, parcelIndex} — the one being typed into
+  const [activeSlot, setActiveSlot] = useState<{ productId: string; parcelIndex: number } | null>(null);
+  const latestSerialsRef = useRef<Record<string, string>>({});
+  // Expanded category tracking
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [tableViewCategory, setTableViewCategory] = useState<string | null>(null);
   const debounceTimersRef = useRef<Record<string, any>>({});
-  const lastSubmittedRef = useRef<Record<string, string>>({}); // Track last submitted value
-  const inputRefs = useRef<Record<string, any>>({}); // Refs to TextInput components
-  const variantPositionsRef = useRef<Record<string, number>>({}); // Track Y position of each variant
-  const [lastOpenedVariant, setLastOpenedVariant] = useState<string | null>(null); // Track which variant was just opened
+  const lastSubmittedRef = useRef<Record<string, string>>({});
+  const weightInputRef = useRef<TextInput>(null);
+  const serialInputRef = useRef<TextInput>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const panelAnim = useRef(new Animated.Value(0)).current;
 
-  const submitWeight = useCallback(async (productId: string, parcelIndex: number, weight: string) => {
-    if (!weight || isNaN(parseFloat(weight))) return;
-
-    if (!orderId) {
-      Alert.alert('Error', 'Order ID is missing');
-      return;
+  // Show/hide entry panel when activeSlot changes
+  useEffect(() => {
+    Animated.spring(panelAnim, {
+      toValue: activeSlot ? 1 : 0,
+      useNativeDriver: true,
+      tension: 80,
+      friction: 12,
+    }).start();
+    if (activeSlot) {
+      setTimeout(() => {
+        const item = items.find(i => i.productId === activeSlot.productId);
+        const slotKey = `${activeSlot.productId}-${activeSlot.parcelIndex}`;
+        // CRITICAL: Check both prop and the LATEST local ref (to handle fast scans)
+        const hasSerial = (item?.serialNumbers?.[activeSlot.parcelIndex]) || (latestSerialsRef.current[slotKey]);
+        
+        if (item?.requireSerialNo && !hasSerial) {
+          serialInputRef.current?.focus();
+        } else {
+          weightInputRef.current?.focus();
+        }
+      }, 300);
     }
+  }, [activeSlot?.productId, activeSlot?.parcelIndex]);
 
+  useEffect(() => {
+    return () => {
+      Object.values(debounceTimersRef.current).forEach(t => clearTimeout(t));
+    };
+  }, []);
+
+  const submitFulfillment = useCallback(async (productId: string, parcelIndex: number, weight: string | null, serialNo: string | null) => {
+    if (!orderId) { Alert.alert('Error', 'Order ID is missing'); return; }
     const key = `${productId}-${parcelIndex}`;
-
-    // Prevent duplicate submissions of same value
-    if (lastSubmittedRef.current[key] === weight) {
-      console.log(`[SKIPPED] Duplicate submission: ${key} = ${weight}`);
-      return;
-    }
-
-    console.log(`[SUBMIT START] ${key} = ${weight}`);
-    lastSubmittedRef.current[key] = weight;
+    const submittedValue = `${weight || ''}|${serialNo || ''}`;
+    if (lastSubmittedRef.current[key] === submittedValue) return;
+    lastSubmittedRef.current[key] = submittedValue;
     setSaving(key);
     try {
-      // Parse and round to 2 decimal places
-      const weightValue = Math.round(parseFloat(weight) * 100) / 100;
+      const weightValue = weight && !isNaN(parseFloat(weight)) ? Math.round(parseFloat(weight) * 100) / 100 : (weight === '' ? null : null);
+      const payload: any = { productId, parcelIndex };
+      
+      // Always send weight if provided (allow null to clear)
+      if (weight !== null && weight !== undefined) {
+        payload.weight = weightValue;
+      }
+      
+      // Always send serialNo if provided (allow empty string to clear)
+      if (serialNo !== null && serialNo !== undefined) {
+        payload.serialNo = serialNo;
+      }
 
-      console.log(`[API CALL] ${key} weight=${weightValue}`);
-      const response = await api.put(`/orders/${orderId}/fulfill`, {
-        productId,
-        parcelIndex,
-        weight: weightValue,
-      });
-
-      console.log(`[API SUCCESS] ${key} - weight saved successfully`);
-
-      // Update parent with response so UI shows saved values
+      console.log('📤 Sending fulfillment update:', payload);
+      const response = await api.put(`/orders/${orderId}/fulfill`, payload);
       if (response.items) {
         onUpdate(response.items);
         
-        // Auto-close variant if fully fulfilled
+        // Find the updated item in the response
         const updatedItem = response.items.find((i: any) => i.productId === productId);
         if (updatedItem) {
+          // CHECK IF CURRENT PARCEL IS FULLY DONE
+          const currentWeight = updatedItem.fulfillment?.[parcelIndex];
+          const currentSerial = updatedItem.serialNumbers?.[parcelIndex];
+          const hasWeight = currentWeight !== null && currentWeight !== undefined;
+          const hasSerial = !updatedItem.requireSerialNo || (currentSerial && currentSerial.trim() !== '');
+          
+          // If current parcel isn't finished yet (e.g. just saved serial but waiting for weight),
+          // DO NOT advance to the next parcel.
+          if (!hasWeight || !hasSerial) {
+            return;
+          }
+
+          // ONLY ADVANCE if current is done
           const fulfilled = (updatedItem.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length;
-          if (fulfilled === updatedItem.quantity) {
-             setExpandedVariants(prev => ({...prev, [productId]: false}));
+          if (fulfilled < updatedItem.quantity) {
+            // Find next unfilled in THIS variant
+            const nextUnfilled = (updatedItem.fulfillment || []).findIndex((w: any, idx: number) => idx > parcelIndex && (w === null || w === undefined));
+            if (nextUnfilled !== -1) {
+              setTimeout(() => setActiveSlot({ productId, parcelIndex: nextUnfilled }), 200);
+            } else {
+              // Find next unfilled in SAME CATEGORY only
+              const allItems: OrderItem[] = response.items;
+              const currentCategory = updatedItem.category;
+              let advanced = false;
+              for (const nextItem of allItems) {
+                if (nextItem.productId === productId || nextItem.category !== currentCategory) continue;
+                const nextFulfilled = (nextItem.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length;
+                if (nextFulfilled < nextItem.quantity) {
+                  const nextIdx = (nextItem.fulfillment || []).findIndex((w: any) => w === null || w === undefined);
+                  setTimeout(() => setActiveSlot({ productId: nextItem.productId, parcelIndex: nextIdx === -1 ? 0 : nextIdx }), 200);
+                  advanced = true;
+                  break;
+                }
+              }
+              // Category done — close input panel
+              if (!advanced) setTimeout(() => setActiveSlot(null), 300);
+            }
+          } else {
+            // This variant done; find next in SAME CATEGORY only
+            const allItems: OrderItem[] = response.items;
+            const currentCategory = updatedItem.category;
+            let advanced = false;
+            for (const nextItem of allItems) {
+              if (nextItem.productId === productId || nextItem.category !== currentCategory) continue;
+              const nextFulfilled = (nextItem.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length;
+              if (nextFulfilled < nextItem.quantity) {
+                const nextIdx = (nextItem.fulfillment || []).findIndex((w: any) => w === null || w === undefined);
+                setTimeout(() => setActiveSlot({ productId: nextItem.productId, parcelIndex: nextIdx === -1 ? 0 : nextIdx }), 200);
+                advanced = true;
+                break;
+              }
+            }
+            // Category done — close input panel
+            if (!advanced) setTimeout(() => setActiveSlot(null), 300);
           }
         }
       }
-
-      // Clear local input state after successful save
-      setInputValues(prev => {
-        const updated = { ...prev };
-        delete updated[key];
-        return updated;
-      });
-
-      // Auto-focus next parcel input
-      setTimeout(() => {
-        // Find the updated item to check if it's fully fulfilled
-        const updatedItem = response.items?.find((i: any) => i.productId === productId);
-        const isFullyFulfilled = updatedItem && (updatedItem.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length === updatedItem.quantity;
-        
-        if (isFullyFulfilled) {
-          // Skip auto-focusing if the variant is closing
-          return;
-        }
-
-        const currentParcelIndex = parcelIndex;
-        const nextKey = `${productId}-${currentParcelIndex + 1}`;
-
-        if (inputRefs.current[nextKey]) {
-          // Next parcel in same product exists
-          inputRefs.current[nextKey].focus();
-        } else {
-          // Find next product's first parcel
-          const allKeys = Object.keys(inputRefs.current).sort();
-          const currentKeyIndex = allKeys.indexOf(key);
-          if (currentKeyIndex < allKeys.length - 1) {
-            inputRefs.current[allKeys[currentKeyIndex + 1]].focus();
-          }
-        }
-      }, 100);
-
-      console.log(`[SUBMIT END] ${key}`);
+      setInputValues(prev => { const u = { ...prev }; delete u[key]; return u; });
+      setSerialValues(prev => { const u = { ...prev }; delete u[key]; return u; });
     } catch (e: any) {
-      console.error('Error saving weight:', e.message);
+      console.error('Error saving:', e.message);
     } finally {
       setSaving(null);
     }
   }, [orderId, onUpdate]);
 
-  const handleWeightChange = (productId: string, parcelIndex: number, weight: string) => {
+  const handleFulfillmentChange = (productId: string, parcelIndex: number, field: 'weight' | 'serialNo', value: string) => {
     const key = `${productId}-${parcelIndex}`;
-
-    // Allow only numbers and single decimal point
-    const validatedWeight = weight.replace(/[^0-9.]/g, '');
-    const decimalCount = (validatedWeight.match(/\./g) || []).length;
-    const cleanedWeight = decimalCount > 1
-      ? validatedWeight.substring(0, validatedWeight.lastIndexOf('.'))
-      : validatedWeight;
-
-    // Update local input state immediately for real-time UI feedback
-    setInputValues(prev => ({
-      ...prev,
-      [key]: cleanedWeight,
-    }));
-
-    // Clear existing debounce timer
-    if (debounceTimersRef.current[key]) {
-      clearTimeout(debounceTimersRef.current[key]);
+    let cleaned = value;
+    if (field === 'weight') {
+      const v = value.replace(/[^0-9.]/g, '');
+      const dots = (v.match(/\./g) || []).length;
+      cleaned = dots > 1 ? v.substring(0, v.lastIndexOf('.')) : v;
+      setInputValues(prev => ({ ...prev, [key]: cleaned }));
+    } else {
+      setSerialValues(prev => ({ ...prev, [key]: cleaned }));
+      latestSerialsRef.current[key] = cleaned;
     }
-
-    // Only submit if weight is not empty and valid
-    if (cleanedWeight && !isNaN(parseFloat(cleanedWeight))) {
-      // Set new timer - submit after user stops typing
-      debounceTimersRef.current[key] = setTimeout(() => {
-        submitWeight(productId, parcelIndex, cleanedWeight);
-        delete debounceTimersRef.current[key];
-      }, DEBOUNCE_DELAY);
+    if (debounceTimersRef.current[key]) clearTimeout(debounceTimersRef.current[key]);
+    const currentItem = items.find(i => i.productId === productId);
+    if (field === 'serialNo') {
+      // Only submit serial — don't send weight so the parcel stays "incomplete" and doesn't auto-advance
+      if (cleaned) {
+        debounceTimersRef.current[key] = setTimeout(() => {
+          submitFulfillment(productId, parcelIndex, null, cleaned);
+          // Auto-focus to weight after serial is saved
+          setTimeout(() => weightInputRef.current?.focus(), 100);
+          delete debounceTimersRef.current[key];
+        }, DEBOUNCE_DELAY);
+      }
+    } else {
+      const existingSerial = serialValues[key] ?? (currentItem?.serialNumbers?.[parcelIndex] || null);
+      if (cleaned || existingSerial) {
+        debounceTimersRef.current[key] = setTimeout(() => {
+          submitFulfillment(productId, parcelIndex, cleaned, existingSerial);
+          delete debounceTimersRef.current[key];
+        }, DEBOUNCE_DELAY);
+      }
     }
   };
-
-  // Cleanup debounce timers on unmount
-  useEffect(() => {
-    return () => {
-      Object.values(debounceTimersRef.current).forEach(timer => clearTimeout(timer));
-    };
-  }, []);
-
-  // Auto-scroll to opened variant
-  useEffect(() => {
-    if (lastOpenedVariant && variantPositionsRef.current[lastOpenedVariant]) {
-      setTimeout(() => {
-        scrollViewRef.current?.scrollTo({
-          y: variantPositionsRef.current[lastOpenedVariant] - 100,
-          animated: true,
-        });
-        setLastOpenedVariant(null);
-      }, 100);
-    }
-  }, [lastOpenedVariant]);
 
   const getVariantStatus = (item: OrderItem) => {
     const fulfilled = (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
-    const total = item.quantity;
-    const percentage = total > 0 ? (fulfilled / total) * 100 : 0;
-
-    if (percentage === 0) return { color: Colors.danger, label: 'PENDING', percentage: 0 };
-    if (percentage === 100) return { color: Colors.success, label: 'READY', percentage: 100 };
-    return { color: Colors.warning, label: 'PARTIAL', percentage };
-  };
-
-  const toggleCategory = (category: string) => {
-    setExpandedCategories(prev => ({
-      ...prev,
-      [category]: !prev[category],
-    }));
-  };
-
-  const toggleVariant = (productId: string) => {
-    setExpandedVariants(prev => {
-      const isCurrentlyOpen = prev[productId];
-
-      if (isCurrentlyOpen) {
-        // Closing this variant
-        const newState = { ...prev };
-        newState[productId] = false;
-        return newState;
-      } else {
-        // Opening this variant, close all others
-        const newState = { ...prev };
-        // Close all variants
-        for (const key in newState) {
-          newState[key] = false;
-        }
-        // Open only this one
-        newState[productId] = true;
-        // Track that this variant was just opened for auto-scroll
-        setLastOpenedVariant(productId);
-        return newState;
-      }
-    });
+    const pct = item.quantity > 0 ? (fulfilled / item.quantity) * 100 : 0;
+    if (pct === 0) return { color: Colors.danger, label: 'PENDING', pct: 0, fulfilled };
+    if (pct === 100) return { color: Colors.success, label: 'DONE', pct: 100, fulfilled };
+    return { color: Colors.warning, label: 'PARTIAL', pct, fulfilled };
   };
 
   const getSummary = (): FulfillmentSummary[] => {
-    const summary: Record<string, FulfillmentSummary> = {};
-
+    const s: Record<string, FulfillmentSummary> = {};
     items.forEach(item => {
-      if (!summary[item.category]) {
-        summary[item.category] = { category: item.category, fulfilled: 0, total: 0 };
-      }
-      const fulfilled = (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
-      summary[item.category].fulfilled += fulfilled;
-      summary[item.category].total += item.quantity;
+      if (!s[item.category]) s[item.category] = { category: item.category, fulfilled: 0, total: 0 };
+      s[item.category].fulfilled += (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
+      s[item.category].total += item.quantity;
     });
-
-    return Object.values(summary);
+    return Object.values(s);
   };
 
-  const totalFulfilled = items.reduce(
-    (sum, item) => sum + (item.fulfillment || []).filter(w => w !== null && w !== undefined).length,
-    0
-  );
+  const totalFulfilled = items.reduce((acc, item) => acc + (item.fulfillment || []).filter(w => w !== null && w !== undefined).length, 0);
+  const groupedByCategory = items.reduce((acc: Record<string, OrderItem[]>, item) => {
+    if (!acc[item.category]) acc[item.category] = [];
+    acc[item.category].push(item);
+    return acc;
+  }, {});
 
-  // Group items by category
-  const groupedByCategory = items.reduce(
-    (acc, item) => {
-      const cat = item.category;
-      if (!acc[cat]) acc[cat] = [];
-      acc[cat].push(item);
-      return acc;
-    },
-    {} as Record<string, OrderItem[]>
-  );
+  const activeItem = activeSlot ? items.find(i => i.productId === activeSlot.productId) : null;
+  const activeKey = activeSlot ? `${activeSlot.productId}-${activeSlot.parcelIndex}` : null;
+  const activeWeight = activeKey ? (inputValues[activeKey] ?? (activeItem?.fulfillment?.[activeSlot!.parcelIndex] !== null && activeItem?.fulfillment?.[activeSlot!.parcelIndex] !== undefined ? String(activeItem?.fulfillment?.[activeSlot!.parcelIndex]) : '')) : '';
+  const activeSerial = activeKey ? (serialValues[activeKey] ?? (activeItem?.serialNumbers?.[activeSlot!.parcelIndex] || '')) : '';
 
-  const parcelInputSize = ((screenWidth - Spacing.lg * 2 - Spacing.md * 2.5) / 3.2) * 0.75;
+  const panelTranslateY = panelAnim.interpolate({ inputRange: [0, 1], outputRange: [300, 0] });
+
+  // Find first unfilled parcel across all items to support "Start" button
+  const findFirstUnfilled = () => {
+    for (const item of items) {
+      const idx = (item.fulfillment || []).findIndex((w, i) => (w === null || w === undefined) && i < item.quantity);
+      if (idx !== -1) return { productId: item.productId, parcelIndex: idx };
+      if ((item.fulfillment || []).length < item.quantity) return { productId: item.productId, parcelIndex: (item.fulfillment || []).length };
+    }
+    return null;
+  };
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.headerLabel}>ORDER FULFILLMENT</Text>
-            <View style={styles.headerProgressRow}>
-              <Text style={styles.headerProgress}>{totalFulfilled}</Text>
-              <Text style={styles.headerProgressSlash}>/</Text>
-              <Text style={styles.headerProgress}>{totalParcels}</Text>
-              <Text style={styles.headerProgressLabel}>parcels</Text>
+      {/* ── Variant List ── */}
+      <ScrollView ref={scrollViewRef} style={styles.itemsContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {/* ── Progress Header (scrolls with content) ── */}
+        <View style={styles.header}>
+          <View style={styles.headerTop}>
+            <View>
+              <Text style={styles.headerLabel}>FULFILLMENT PROGRESS</Text>
+              <View style={styles.headerProgressRow}>
+                <Text style={styles.headerProgress}>{totalFulfilled}</Text>
+                <Text style={styles.headerProgressSlash}>/</Text>
+                <Text style={styles.headerProgress}>{totalParcels}</Text>
+                <Text style={styles.headerProgressLabel}>parcels</Text>
+              </View>
+            </View>
+            <View style={[styles.progressBadge, { backgroundColor: totalFulfilled === totalParcels ? Colors.success + '20' : Colors.warning + '20', borderColor: totalFulfilled === totalParcels ? Colors.success : Colors.warning }]}>
+              <Text style={[styles.progressBadgeText, { color: totalFulfilled === totalParcels ? Colors.success : totalFulfilled > 0 ? Colors.warning : Colors.danger }]}>
+                {totalFulfilled === totalParcels ? 'COMPLETE' : totalFulfilled > 0 ? 'IN PROGRESS' : 'PENDING'}
+              </Text>
             </View>
           </View>
-          <View style={[
-            styles.progressBadge,
-            {
-              backgroundColor:
-                totalFulfilled === totalParcels
-                  ? Colors.success + '15'
-                  : totalFulfilled > 0
-                  ? Colors.warning + '15'
-                  : Colors.danger + '15',
-            },
-          ]}>
-            <Text style={[
-              styles.progressBadgeText,
-              {
-                color:
-                  totalFulfilled === totalParcels
-                    ? Colors.success
-                    : totalFulfilled > 0
-                    ? Colors.warning
-                    : Colors.danger,
-              },
-            ]}>
-              {totalFulfilled === totalParcels ? 'COMPLETE' : totalFulfilled > 0 ? 'IN PROGRESS' : 'PENDING'}
-            </Text>
+          {/* Progress bar */}
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, {
+              width: `${Math.min((totalFulfilled / Math.max(totalParcels, 1)) * 100, 100)}%` as any,
+              backgroundColor: totalFulfilled === totalParcels ? Colors.success : Colors.warning,
+            }]} />
           </View>
+          {/* Quick start button */}
+          {!activeSlot && totalFulfilled < totalParcels && (
+            <TouchableOpacity
+              style={styles.startBtn}
+              onPress={() => { const first = findFirstUnfilled(); if (first) setActiveSlot(first); }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="play-circle" size={20} color="#FFF" />
+              <Text style={styles.startBtnText}>Continue Entry</Text>
+            </TouchableOpacity>
+          )}
         </View>
-        <View style={styles.progressContainer}>
-          <View style={styles.progressIndicator}>
-            <View
-              style={[
-                styles.progressBar,
-                {
-                  width: `${Math.min((totalFulfilled / totalParcels) * 100, 100)}%`,
-                  backgroundColor:
-                    totalFulfilled === totalParcels
-                      ? Colors.success
-                      : totalFulfilled > 0
-                      ? Colors.warning
-                      : Colors.danger,
-                },
-              ]}
-            />
-          </View>
-        </View>
-      </View>
-
-      {/* Items */}
-      <ScrollView style={styles.itemsContainer} showsVerticalScrollIndicator={false}>
-        {Object.entries(groupedByCategory).map(([category, categoryItems]) => {
-          const isCategoryExpanded = expandedCategories[category] !== false; // Default to expanded
+        {Object.entries(groupedByCategory).map(([category, catItems]) => {
+          const isExpanded = expandedCategories[category] !== false;
+          const catFulfilled = catItems.reduce((acc, i) => acc + (i.fulfillment || []).filter(w => w !== null && w !== undefined).length, 0);
+          const catTotal = catItems.reduce((a, i) => a + i.quantity, 0);
           return (
             <View key={category} style={styles.categorySection}>
-              <TouchableOpacity
-                style={styles.categoryHeader}
-                onPress={() => toggleCategory(category)}
-                activeOpacity={0.7}
-              >
-                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
-                  <Ionicons
-                    name={isCategoryExpanded ? 'chevron-down' : 'chevron-forward'}
-                    size={14}
-                    color={Colors.brand}
-                    style={{ marginRight: 6 }}
-                  />
+              <TouchableOpacity style={styles.categoryHeader} onPress={() => setExpandedCategories(prev => ({ ...prev, [category]: !isExpanded }))} activeOpacity={0.7}>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.categoryName}>{category}</Text>
+                  <Text style={styles.categoryMeta}>{catFulfilled}/{catTotal} parcels</Text>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
-                  <Text style={styles.categoryCount}>{categoryItems.length} variant(s)</Text>
-                  {isAdmin && (
-                    <TouchableOpacity
-                      onPress={() => setTableViewCategory(tableViewCategory === category ? null : category)}
-                      style={[styles.viewDetailsButton, tableViewCategory === category && styles.viewDetailsButtonActive]}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons name={tableViewCategory === category ? "list" : "list-outline"} size={16} color={Colors.brand} />
-                    </TouchableOpacity>
-                  )}
+                <View style={[styles.catBadge, { backgroundColor: catFulfilled === catTotal ? Colors.success + '20' : catFulfilled > 0 ? Colors.warning + '20' : Colors.danger + '15' }]}>
+                  <Text style={[styles.catBadgeText, { color: catFulfilled === catTotal ? Colors.success : catFulfilled > 0 ? Colors.warning : Colors.danger }]}>
+                    {catFulfilled === catTotal ? '✓ DONE' : `${catFulfilled}/${catTotal}`}
+                  </Text>
                 </View>
+                <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={Colors.textSecondary} style={{ marginLeft: 8 }} />
               </TouchableOpacity>
 
-              {/* Table View for Admin */}
-              {isCategoryExpanded && isAdmin && tableViewCategory === category && (
-                <View style={styles.tableViewContainer}>
-                  {/* Table Header */}
-                  <View style={styles.tableRowHeader}>
-                    <Text style={[styles.tableCell, { flex: 1 }]}>Variant</Text>
-                    <Text style={[styles.tableCell, { width: 50, textAlign: 'center' }]}>Qty</Text>
-                    <Text style={[styles.tableCell, { width: 50, textAlign: 'center' }]}>Done</Text>
-                    <Text style={[styles.tableCell, { flex: 1, textAlign: 'center' }]}>Weights</Text>
-                  </View>
-
-                  {/* Table Body */}
-                  {categoryItems.map((item) => {
-                    const fulfilled = (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
-                    const weights = (item.fulfillment || [])
-                      .map((w, idx) => w ? `${w.toFixed(2)}` : null)
-                      .filter(w => w !== null)
-                      .join(', ');
-                    const status = getVariantStatus(item);
-
-                    return (
-                      <View key={item.productId} style={styles.tableRowBody}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.tableCellText}>{item.alias}</Text>
-                          <Text style={styles.tableCellSmall}>{item.size}</Text>
-                        </View>
-                        <Text style={[styles.tableCell, { width: 50, textAlign: 'center', color: Colors.text }]}>{item.quantity}</Text>
-                        <Text style={[styles.tableCell, { width: 50, textAlign: 'center', color: Colors.text }]}>{fulfilled}</Text>
-                        <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Text style={[styles.tableCellSmall, { flex: 1 }]}>{weights || '-'}</Text>
-                          <View style={[styles.statusBadgeSmall, { backgroundColor: status.color + '20' }]}>
-                            <Text style={[styles.statusBadgeText, { color: status.color }]}>{status.label}</Text>
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-
-              {/* Collapsible Variants View */}
-              {isCategoryExpanded && !(isAdmin && tableViewCategory === category) && categoryItems.map(item => {
-                const variantStatus = getVariantStatus(item);
-                const isVariantExpanded = expandedVariants[item.productId];
-
+              {isExpanded && catItems.map(item => {
+                const status = getVariantStatus(item);
+                const isActive = activeSlot?.productId === item.productId;
                 return (
-                  <View
-                    key={item.productId}
-                    style={styles.variantCard}
-                    onLayout={(e) => {
-                      variantPositionsRef.current[item.productId] = e.nativeEvent.layout.y;
-                    }}
-                  >
-                    <TouchableOpacity
-                      style={styles.variantMeta}
-                      onPress={() => toggleVariant(item.productId)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
-                        <Ionicons
-                          name={isVariantExpanded ? 'chevron-down' : 'chevron-forward'}
-                          size={14}
-                          color={Colors.text}
-                          style={{ marginRight: 6 }}
-                        />
+                  <View key={item.productId} style={[styles.variantRow, isActive && styles.variantRowActive]}>
+                    <View style={styles.variantLeft}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.variantSize}>{item.size}</Text>
+                        {item.requireSerialNo && (
+                          <View style={styles.snBadge}>
+                            <Ionicons name="barcode-outline" size={11} color={Colors.brand} />
+                            <Text style={styles.snBadgeText}>S/N</Text>
+                          </View>
+                        )}
                       </View>
-                      <View
-                        style={[
-                          styles.variantStatusBadge,
-                          { backgroundColor: variantStatus.color + '15', borderColor: variantStatus.color + '30' },
-                        ]}
-                      >
-                        <Text style={[styles.variantStatus, { color: variantStatus.color }]}>
-                          {variantStatus.label}
-                        </Text>
+                      {/* Parcel dots */}
+                      <View style={styles.parcelDots}>
+                        {Array.from({ length: item.quantity }).map((_, idx) => {
+                          const w = item.fulfillment?.[idx];
+                          const done = w !== null && w !== undefined;
+                          const isThisActive = activeSlot?.productId === item.productId && activeSlot?.parcelIndex === idx;
+                          return (
+                            <TouchableOpacity
+                              key={idx}
+                              onPress={() => setActiveSlot({ productId: item.productId, parcelIndex: idx })}
+                              style={[
+                                styles.dot,
+                                done && styles.dotDone,
+                                isThisActive && styles.dotActive,
+                              ]}
+                              activeOpacity={0.7}
+                            >
+                              {done ? (
+                                <Text style={styles.dotWeightText}>{Number(w).toFixed(0)}</Text>
+                              ) : (
+                                <Text style={styles.dotEmptyText}>{idx + 1}</Text>
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
                       </View>
-                    </TouchableOpacity>
-
-                    {isVariantExpanded && (
-                      <View style={styles.parcelsGrid}>
-                    {Array.from({ length: item.quantity }).map((_, parcelIndex) => {
-                      const key = `${item.productId}-${parcelIndex}`;
-                      // Use local input state if typing, otherwise use fulfillment data
-                      const weight = inputValues[key] !== undefined ? inputValues[key] : (item.fulfillment?.[parcelIndex] ?? null);
-
-                      return (
-                        <View
-                          key={parcelIndex}
-                          style={[styles.parcelInputWrapper, { width: parcelInputSize }]}
+                    </View>
+                    <View style={styles.variantRight}>
+                      <View style={[styles.variantStatusDot, { backgroundColor: status.color }]} />
+                      <Text style={[styles.variantStatusText, { color: status.color }]}>{status.fulfilled}/{item.quantity}</Text>
+                      {status.pct < 100 && (
+                        <TouchableOpacity
+                          style={styles.enterBtn}
+                          onPress={() => {
+                            const nextIdx = (item.fulfillment || []).findIndex((w, i) => (w === null || w === undefined) && i < item.quantity);
+                            const slot = nextIdx !== -1 ? nextIdx : (item.fulfillment || []).length < item.quantity ? (item.fulfillment || []).length : 0;
+                            setActiveSlot({ productId: item.productId, parcelIndex: slot });
+                          }}
+                          activeOpacity={0.8}
                         >
-                          <TextInput
-                            ref={(r) => {
-                              if (r) inputRefs.current[key] = r;
-                            }}
-                            style={[
-                              styles.weightInput,
-                              weight !== null && styles.weightInputFilled,
-                              saving === key && styles.weightInputLoading,
-                            ]}
-                            placeholder={`P${parcelIndex + 1}`}
-                            placeholderTextColor={Colors.textSecondary}
-                            value={
-                              weight !== null
-                                ? typeof weight === 'string'
-                                  ? weight
-                                  : weight.toFixed(2)
-                                : ''
-                            }
-                            onChangeText={(val) =>
-                              handleWeightChange(item.productId, parcelIndex, val)
-                            }
-                            keyboardType="decimal-pad"
-                            editable={!saving}
-                            maxLength={8}
-                          />
-
-                          {saving === key && (
-                            <View style={styles.savingIndicator}>
-                              <ActivityIndicator size="small" color={Colors.brand} />
-                            </View>
-                          )}
-
-                        </View>
-                      );
-                    })}
-                      </View>
-                    )}
+                          <Ionicons name="pencil" size={14} color="#FFF" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                 );
               })}
@@ -497,46 +388,162 @@ export function OrderFulfillment({
           );
         })}
 
-        <View style={{ height: Spacing.lg }} />
-      </ScrollView>
-
-      {/* Summary */}
-      <View style={styles.summarySection}>
-        <Text style={styles.summaryTitle}>SUMMARY</Text>
-
-        {getSummary().map((cat, idx) => {
-          const isComplete = cat.fulfilled === cat.total;
-          const isPartial = cat.fulfilled > 0 && cat.fulfilled < cat.total;
-          const badgeColor = isComplete ? Colors.success : isPartial ? Colors.warning : Colors.danger;
-
-          return (
-            <View key={cat.category} style={styles.summaryRow}>
-              <View style={{ flex: 1 }}>
+        {/* Summary */}
+        <View style={styles.summarySection}>
+          <Text style={styles.summaryTitle}>SUMMARY</Text>
+          {getSummary().map(cat => {
+            const done = cat.fulfilled === cat.total;
+            const partial = cat.fulfilled > 0 && !done;
+            const badge = done ? Colors.success : partial ? Colors.warning : Colors.danger;
+            return (
+              <View key={cat.category} style={styles.summaryRow}>
                 <Text style={styles.summaryCategory}>{cat.category}</Text>
+                <View style={[styles.summaryBadge, { backgroundColor: badge + '20', borderColor: badge + '40' }]}>
+                  <Text style={[styles.summaryValue, { color: badge }]}>{cat.fulfilled}/{cat.total}</Text>
+                  {done && <Ionicons name="checkmark" size={12} color={badge} />}
+                </View>
               </View>
-              <View style={[
-                styles.summaryBadge,
-                { backgroundColor: badgeColor + '15', borderColor: badgeColor + '30' },
-              ]}>
-                <Text style={[styles.summaryValue, { color: badgeColor }]}>
-                  {cat.fulfilled}/{cat.total}
-                </Text>
-                {isComplete && <Ionicons name="checkmark" size={12} color={badgeColor} />}
-              </View>
-            </View>
-          );
-        })}
-
-        <View style={styles.okButtonContainer}>
-          <TouchableOpacity
-            style={styles.okButton}
-            onPress={() => router.back()}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.okButtonText}>OK</Text>
+            );
+          })}
+          <TouchableOpacity style={styles.doneBtn} onPress={() => router.back()} activeOpacity={0.85}>
+            <Text style={styles.doneBtnText}>Done</Text>
           </TouchableOpacity>
         </View>
-      </View>
+
+        <View style={{ height: 280 }} />
+      </ScrollView>
+
+      {/* ── Bottom Entry Panel ── */}
+      {activeSlot && activeItem && (
+        <Animated.View style={[styles.entryPanel, { transform: [{ translateY: panelTranslateY }] }]}>
+          {/* Drag handle */}
+          <View style={styles.panelHandle} />
+
+          {/* Item header */}
+          <View style={styles.panelHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.panelVariant}>{activeItem.size}</Text>
+              <Text style={styles.panelParcelLabel}>
+                Parcel <Text style={{ color: Colors.brand, fontWeight: '800' }}>{activeSlot.parcelIndex + 1}</Text> of {activeItem.quantity}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => { Keyboard.dismiss(); setActiveSlot(null); }} style={styles.panelClose}>
+              <Ionicons name="close-circle" size={28} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Saving indicator */}
+          {saving === activeKey && (
+            <View style={styles.savingRow}>
+              <ActivityIndicator size="small" color={Colors.brand} />
+              <Text style={styles.savingText}>Saving…</Text>
+            </View>
+          )}
+
+          {/* Serial input (if required) */}
+          {activeItem.requireSerialNo && (
+            <View style={styles.inputGroup}>
+              <View style={styles.inputLabelRow}>
+                <Ionicons name="barcode-outline" size={16} color={Colors.brand} />
+                <Text style={styles.inputLabel}>Serial Number</Text>
+              </View>
+              <TextInput
+                ref={serialInputRef}
+                style={[styles.bigInput, activeSerial && styles.bigInputFilled]}
+                placeholder="Scan or type serial number"
+                placeholderTextColor={Colors.textSecondary}
+                value={activeSerial}
+                onChangeText={val => handleFulfillmentChange(activeSlot.productId, activeSlot.parcelIndex, 'serialNo', val)}
+                returnKeyType="next"
+                onSubmitEditing={() => weightInputRef.current?.focus()}
+                autoCapitalize="characters"
+              />
+            </View>
+          )}
+
+          {/* Weight input */}
+          <View style={styles.inputGroup}>
+            <View style={styles.inputLabelRow}>
+              <Ionicons name="scale-outline" size={16} color={Colors.brand} />
+              <Text style={styles.inputLabel}>Weight (kg)</Text>
+            </View>
+            <TextInput
+              ref={weightInputRef}
+              style={[styles.bigInput, styles.bigInputWeight, activeWeight && styles.bigInputFilled]}
+              placeholder="0.00"
+              placeholderTextColor={Colors.textSecondary}
+              value={activeWeight}
+              onChangeText={val => handleFulfillmentChange(activeSlot.productId, activeSlot.parcelIndex, 'weight', val)}
+              keyboardType="decimal-pad"
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                const item = items.find(i => i.productId === activeSlot.productId);
+                const w = inputValues[activeKey!] ?? '';
+                const sn = serialValues[activeKey!] ?? null;
+                if (w) submitFulfillment(activeSlot.productId, activeSlot.parcelIndex, w, sn);
+              }}
+            />
+          </View>
+
+          {/* Navigation row */}
+          <View style={styles.navRow}>
+            <TouchableOpacity
+              style={[styles.navBtn, { opacity: activeSlot.parcelIndex === 0 && items.indexOf(activeItem) === 0 ? 0.3 : 1 }]}
+              onPress={() => {
+                if (activeSlot.parcelIndex > 0) {
+                  setActiveSlot({ productId: activeSlot.productId, parcelIndex: activeSlot.parcelIndex - 1 });
+                } else {
+                  const idx = items.indexOf(activeItem);
+                  if (idx > 0) {
+                    const prev = items[idx - 1];
+                    setActiveSlot({ productId: prev.productId, parcelIndex: prev.quantity - 1 });
+                  }
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-back" size={20} color={Colors.text} />
+              <Text style={styles.navBtnText}>Prev</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.saveBtn}
+              onPress={() => {
+                const w = inputValues[activeKey!] ?? (activeItem.fulfillment?.[activeSlot.parcelIndex] !== null && activeItem.fulfillment?.[activeSlot.parcelIndex] !== undefined ? String(activeItem.fulfillment?.[activeSlot.parcelIndex]) : null);
+                const sn = serialValues[activeKey!] ?? (activeItem.serialNumbers?.[activeSlot.parcelIndex] || null);
+                if (w || sn) submitFulfillment(activeSlot.productId, activeSlot.parcelIndex, w, sn);
+              }}
+              activeOpacity={0.85}
+              disabled={!!saving}
+            >
+              {saving === activeKey ? <ActivityIndicator size="small" color="#FFF" /> : (
+                <>
+                  <Ionicons name="checkmark" size={20} color="#FFF" />
+                  <Text style={styles.saveBtnText}>Save</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.navBtn}
+              onPress={() => {
+                if (activeSlot.parcelIndex < activeItem.quantity - 1) {
+                  setActiveSlot({ productId: activeSlot.productId, parcelIndex: activeSlot.parcelIndex + 1 });
+                } else {
+                  const idx = items.indexOf(activeItem);
+                  if (idx < items.length - 1) {
+                    setActiveSlot({ productId: items[idx + 1].productId, parcelIndex: 0 });
+                  }
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.navBtnText}>Next</Text>
+              <Ionicons name="chevron-forward" size={20} color={Colors.text} />
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -550,355 +557,141 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.lg,
-    gap: Spacing.md,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  headerLabel: {
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-    letterSpacing: 1,
-    marginBottom: Spacing.xs,
-  },
-  headerProgressRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: Spacing.xs,
-  },
-  headerProgress: {
-    fontSize: FontSize.xl,
-    fontWeight: '800',
-    color: Colors.text,
-  },
-  headerProgressSlash: {
-    fontSize: FontSize.lg,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  headerProgressLabel: {
-    fontSize: FontSize.xs,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-    marginLeft: Spacing.xs,
-  },
-  progressBadge: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  progressBadgeText: {
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.md,
     gap: Spacing.sm,
   },
-  progressIndicator: {
-    flex: 1,
-    height: 8,
-    backgroundColor: Colors.border,
-    borderRadius: 4,
-    overflow: 'hidden',
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  headerLabel: { fontSize: 10, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1.5, marginBottom: 4 },
+  headerProgressRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  headerProgress: { fontSize: 28, fontWeight: '800', color: Colors.text },
+  headerProgressSlash: { fontSize: 22, fontWeight: '400', color: Colors.textSecondary },
+  headerProgressLabel: { fontSize: 13, color: Colors.textSecondary, marginLeft: 4 },
+  progressBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1 },
+  progressBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  progressTrack: { height: 6, backgroundColor: Colors.border, borderRadius: 3, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 3 },
+  startBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.brand, borderRadius: 12,
+    paddingVertical: 12, paddingHorizontal: 20,
+    justifyContent: 'center', marginTop: 4,
   },
-  progressBar: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  progressPercent: {
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-    color: Colors.text,
-    minWidth: 35,
-    textAlign: 'right',
-  },
+  startBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
 
-  // Items
-  itemsContainer: { flex: 1, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-  categorySection: { marginBottom: Spacing.md },
+  // Category
+  itemsContainer: { flex: 1 },
+  categorySection: { marginTop: Spacing.md, marginHorizontal: Spacing.md },
   categoryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    paddingLeft: Spacing.md,
-    backgroundColor: Colors.brand + '08',
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.brand,
-    borderWidth: 1,
-    borderColor: Colors.brand + '20',
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.surface, borderRadius: 12,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.md,
+    borderWidth: 1, borderColor: Colors.border,
   },
-  categoryName: {
-    fontSize: FontSize.md,
-    fontWeight: '800',
-    color: Colors.brand,
-    letterSpacing: 0.3,
-  },
-  categoryCount: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    fontWeight: '700',
-    backgroundColor: Colors.bgSecondary,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  viewDetailsButton: {
-    padding: Spacing.xs,
-    borderRadius: 6,
-    backgroundColor: Colors.brand + '15',
-  },
-  viewDetailsButtonActive: {
-    backgroundColor: Colors.brand + '30',
-  },
+  categoryName: { fontSize: 13, fontWeight: '700', color: Colors.text },
+  categoryMeta: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  catBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginRight: 4 },
+  catBadgeText: { fontSize: 11, fontWeight: '800' },
 
-  // Table View Styles
-  tableViewContainer: {
-    backgroundColor: Colors.surface,
-    borderRadius: 8,
-    marginHorizontal: Spacing.sm,
-    marginVertical: Spacing.sm,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.border,
+  // Variant row
+  variantRow: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: Colors.surface, borderRadius: 10,
+    paddingHorizontal: Spacing.md, paddingVertical: 10,
+    marginTop: 6, borderWidth: 1, borderColor: Colors.border,
   },
-  tableRowHeader: {
-    flexDirection: 'row',
-    backgroundColor: Colors.brand + '15',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  tableRowBody: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    alignItems: 'center',
-  },
-  tableCell: {
-    fontSize: FontSize.xs,
-    fontWeight: '600',
-    color: Colors.brand,
-  },
-  tableCellText: {
-    fontSize: FontSize.xs,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  tableCellSmall: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-  },
-  statusBadgeSmall: {
-    paddingHorizontal: Spacing.xs,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  statusBadgeText: {
-    fontSize: FontSize.xs,
-    fontWeight: '600',
-  },
+  variantRowActive: { borderColor: Colors.brand, borderWidth: 2, backgroundColor: Colors.brand + '08' },
+  variantLeft: { flex: 1 },
+  variantSize: { fontSize: 14, fontWeight: '800', color: Colors.text },
+  snBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.brand + '18', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, gap: 2 },
+  snBadgeText: { fontSize: 10, fontWeight: '700', color: Colors.brand },
 
-  // Variant Card
-  variantCard: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    marginBottom: Spacing.sm,
-    overflow: 'hidden',
-    shadowColor: Colors.text,
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+  // Parcel dots
+  parcelDots: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  dot: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: Colors.bgSecondary, borderWidth: 1.5, borderColor: Colors.border,
+    justifyContent: 'center', alignItems: 'center',
   },
-  variantMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    paddingLeft: Spacing.md,
-    backgroundColor: Colors.bgSecondary + '40',
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.info,
-    marginBottom: 0,
-  },
-  variantSize: {
-    fontSize: FontSize.md,
-    fontWeight: '800',
-    color: Colors.text,
-    letterSpacing: 0.2,
-  },
-  variantAlias: {
-    fontSize: FontSize.xs,
-    color: Colors.info,
-    fontWeight: '600',
-    marginTop: 3,
-    letterSpacing: 0.3,
-  },
-  variantStatusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    gap: 4,
-  },
-  variantStatus: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
+  dotDone: { backgroundColor: Colors.success + '20', borderColor: Colors.success },
+  dotActive: { backgroundColor: Colors.brand + '25', borderColor: Colors.brand, borderWidth: 2.5 },
+  dotWeightText: { fontSize: 11, fontWeight: '700', color: Colors.success },
+  dotEmptyText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
 
-  // Parcels Grid
-  parcelsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.md,
-    justifyContent: 'space-around',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.lg,
-    backgroundColor: Colors.bg,
-  },
-  parcelInputWrapper: {
-    position: 'relative',
-    flex: 1,
-    minWidth: '22%',
-  },
-  weightInput: {
-    borderWidth: 2,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.sm,
-    height: 56,
-    fontSize: FontSize.md,
-    color: Colors.text,
-    backgroundColor: Colors.surface,
-    textAlign: 'center',
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    shadowColor: Colors.text,
-    shadowOpacity: 0.02,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  weightInputFilled: {
-    borderColor: Colors.success,
-    backgroundColor: Colors.success + '12',
-    borderWidth: 2.5,
-    shadowColor: Colors.success,
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  weightInputLoading: {
-    opacity: 0.7,
-  },
-  savingIndicator: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingRight: Spacing.xs,
-  },
-  checkmarkOverlay: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    marginLeft: -24,
-    marginTop: -24,
-    zIndex: 10,
+  // Variant right actions
+  variantRight: { alignItems: 'center', gap: 6, paddingLeft: 8, paddingTop: 2 },
+  variantStatusDot: { width: 8, height: 8, borderRadius: 4 },
+  variantStatusText: { fontSize: 11, fontWeight: '700' },
+  enterBtn: {
+    width: 32, height: 32, borderRadius: 8,
+    backgroundColor: Colors.brand, justifyContent: 'center', alignItems: 'center',
   },
 
   // Summary
   summarySection: {
-    backgroundColor: Colors.bg,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.lg,
+    margin: Spacing.md, backgroundColor: Colors.surface,
+    borderRadius: 16, padding: Spacing.lg,
+    borderWidth: 1, borderColor: Colors.border,
   },
-  summaryTitle: {
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-    letterSpacing: 1,
-    marginBottom: Spacing.md,
+  summaryTitle: { fontSize: 11, fontWeight: '800', color: Colors.textSecondary, letterSpacing: 1.5, marginBottom: 12 },
+  summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  summaryCategory: { fontSize: 13, fontWeight: '600', color: Colors.text, flex: 1 },
+  summaryBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
+  summaryValue: { fontSize: 13, fontWeight: '700' },
+  doneBtn: {
+    marginTop: 16, backgroundColor: Colors.brand, borderRadius: 14,
+    paddingVertical: 14, alignItems: 'center',
   },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  summaryCategory: {
-    fontSize: FontSize.sm,
-    color: Colors.text,
-    fontWeight: '600',
-  },
-  summaryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: Spacing.xs,
-  },
-  summaryValue: {
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-  },
-  okButtonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: Spacing.lg,
-  },
-  okButton: {
-    backgroundColor: '#1a1a1a',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  okButtonText: {
-    fontSize: FontSize.sm,
-    fontWeight: '800',
-    color: '#ffffff',
-    letterSpacing: 0.5,
-  },
+  doneBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
 
+  // ── Bottom Entry Panel ──
+  entryPanel: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: 36,
+    paddingTop: 12,
+    borderTopWidth: 1, borderColor: Colors.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12, shadowRadius: 12, elevation: 20,
+  },
+  panelHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: Colors.border, alignSelf: 'center', marginBottom: 14,
+  },
+  panelHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  panelVariant: { fontSize: 20, fontWeight: '800', color: Colors.text },
+  panelParcelLabel: { fontSize: 14, color: Colors.textSecondary, marginTop: 2 },
+  panelClose: { padding: 4 },
+  savingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  savingText: { fontSize: 13, color: Colors.textSecondary },
+
+  // Inputs
+  inputGroup: { marginBottom: 12 },
+  inputLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  inputLabel: { fontSize: 13, fontWeight: '700', color: Colors.text },
+  bigInput: {
+    width: '100%', height: 56, borderRadius: 14,
+    borderWidth: 2, borderColor: Colors.border,
+    backgroundColor: Colors.bg, paddingHorizontal: 18,
+    fontSize: 22, fontWeight: '700', color: Colors.text,
+    textAlign: 'left',
+  },
+  bigInputWeight: { textAlign: 'center', fontSize: 28 },
+  bigInputFilled: { borderColor: Colors.brand, backgroundColor: Colors.brand + '08' },
+
+  // Nav
+  navRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
+  navBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: 14, borderRadius: 12,
+    backgroundColor: Colors.bgSecondary, borderWidth: 1, borderColor: Colors.border,
+  },
+  navBtnText: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  saveBtn: {
+    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: Colors.success, borderRadius: 14, paddingVertical: 16,
+  },
+  saveBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
 });

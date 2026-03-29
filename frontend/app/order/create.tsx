@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal, FlatList, useWindowDimensions,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal, FlatList, useWindowDimensions, Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -28,6 +28,7 @@ interface SelectedItem {
   printName: string;
   quantity: number;
   rate: string;
+  requireSerialNo?: boolean;
 }
 
 interface CategoryInOrder {
@@ -67,6 +68,7 @@ export default function CreateOrderScreen() {
   const [categorySearch, setCategorySearch] = useState('');
   const [filteredCategories, setFilteredCategories] = useState<string[]>([]);
   const [categoryRateInput, setCategoryRateInput] = useState('');
+  const [categoryMetas, setCategoryMetas] = useState<Record<string, boolean>>({});
 
   // Variant selection modal
   const [showVariantModal, setShowVariantModal] = useState(false);
@@ -93,6 +95,13 @@ export default function CreateOrderScreen() {
       setFilteredCategories(uniqueCategories);
       console.log('📦 Gowdowns fetched:', gowdownsData);
       setGowdowns(gowdownsData);
+      // Fetch category metadata (requireSerialNo)
+      try {
+        const catMetas = await api.get('/products/categories');
+        const map: Record<string, boolean> = {};
+        for (const c of catMetas) { map[c.name] = c.requireSerialNo; }
+        setCategoryMetas(map);
+      } catch (_) {}
     } catch (e: any) {
       console.error('❌ Error fetching data:', e);
       Alert.alert('Error', e.message);
@@ -231,6 +240,7 @@ export default function CreateOrderScreen() {
         printName: product.printName,
         quantity: parseInt(selection.quantity),
         rate: selectedCategoryRate || selection.rate, // Use category rate if set, otherwise variant rate
+        requireSerialNo: categoryMetas[selectedCategory || ''] ?? false,
       };
     });
 
@@ -439,6 +449,11 @@ export default function CreateOrderScreen() {
                         placeholder="Rate"
                         placeholderTextColor={Colors.textSecondary}
                       />
+                      {item.requireSerialNo && (
+                        <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
+                          <Ionicons name="barcode-outline" size={16} color={Colors.brand} />
+                        </View>
+                      )}
                       <TouchableOpacity
                         onPress={() => handleRemoveVariant(catInOrder.category, item.productId)}
                         activeOpacity={0.7}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  Modal, Alert, ActivityIndicator, ScrollView, useWindowDimensions,
+  Modal, Alert, ActivityIndicator, ScrollView, useWindowDimensions, Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,12 +18,18 @@ interface Product {
   createdAt: string;
 }
 
+interface Category {
+  name: string;
+  requireSerialNo: boolean;
+}
+
 type ViewMode = 'categories' | 'variants';
 
 export default function CatalogScreen() {
   const { user } = useAuth();
   const { width } = useWindowDimensions();
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategoriesState] = useState<Category[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -41,9 +47,16 @@ export default function CatalogScreen() {
   const [deleteCategoryData, setDeleteCategoryData] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // Category edit modal
+  const [showEditCategoryModal, setShowEditCategoryModal] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editCategoryName, setEditCategoryName] = useState('');
+  const [editCategorySerial, setEditCategorySerial] = useState(false);
+  const [savingCategoryMeta, setSavingCategoryMeta] = useState(false);
 
   // Form fields
   const [newCategory, setNewCategory] = useState('');
+  const isAdmin = user?.role === 'admin';
   const [formData, setFormData] = useState({
     size: '',
     printName: '',
@@ -57,8 +70,12 @@ export default function CatalogScreen() {
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      const data = await api.get('/products');
+      const [data, cats] = await Promise.all([
+        api.get('/products'),
+        api.get('/products/categories'),
+      ]);
       setProducts(data);
+      setCategoriesState(cats);
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -67,34 +84,33 @@ export default function CatalogScreen() {
   };
 
   const getCategories = useCallback(() => {
-    const cats = new Set(products.map(p => p.category));
-    return Array.from(cats).sort();
-  }, [products]);
+    return categories;
+  }, [categories]);
 
   const getVariantsInCategory = useCallback((category: string) => {
     return products.filter(p => p.category === category).sort((a, b) => a.alias.localeCompare(b.alias));
   }, [products]);
 
   const filteredCategories = useCallback(() => {
-    const cats = getCategories();
-    if (!search.trim()) return cats;
+    if (!search.trim()) return categories;
     const q = search.toLowerCase();
-    return cats.filter(cat => cat.toLowerCase().includes(q));
-  }, [search, getCategories]);
+    return categories.filter(cat => cat.name.toLowerCase().includes(q));
+  }, [search, categories]);
 
   const handleAddCategory = async () => {
     if (!newCategory.trim()) {
       Alert.alert('Error', 'Category name required');
       return;
     }
-    if (getCategories().includes(newCategory)) {
+    if (categories.some(c => c.name === newCategory.trim())) {
       Alert.alert('Error', 'Category already exists');
       return;
     }
     // Category will be created when first variant is added
+    const n = newCategory.trim();
     setNewCategory('');
     setShowAddCategoryModal(false);
-    setSelectedCategory(newCategory);
+    setSelectedCategory(n);
     setViewMode('variants');
     setShowAddVariantModal(true);
   };
@@ -200,6 +216,43 @@ export default function CatalogScreen() {
     setDeleteMessage(null);
   };
 
+  const openEditCategoryModal = (cat: Category) => {
+    setEditingCategory(cat);
+    setEditCategoryName(cat.name);
+    setEditCategorySerial(cat.requireSerialNo);
+    setShowEditCategoryModal(true);
+  };
+
+  const saveCategoryMeta = async () => {
+    if (!editingCategory) return;
+    if (!editCategoryName.trim()) {
+      Alert.alert('Error', 'Category name cannot be empty');
+      return;
+    }
+    setSavingCategoryMeta(true);
+    try {
+      await api.put(`/products/categories/${encodeURIComponent(editingCategory.name)}`, {
+        requireSerialNo: editCategorySerial,
+        newName: editCategoryName.trim(),
+      });
+      // If category was the currently selected one, update name
+      if (selectedCategory === editingCategory.name) {
+        setSelectedCategory(editCategoryName.trim());
+      }
+      setShowEditCategoryModal(false);
+      await fetchProducts();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingCategoryMeta(false);
+    }
+  };
+
+  const closeEditCategoryModal = () => {
+    setShowEditCategoryModal(false);
+    setEditingCategory(null);
+  };
+
   const openEditVariantModal = (product: Product) => {
     setEditingProduct(product);
     setFormData({
@@ -210,22 +263,38 @@ export default function CatalogScreen() {
     setShowAddVariantModal(true);
   };
 
-  const renderCategoryCard = ({ item }: { item: string }) => {
-    const variantCount = getVariantsInCategory(item).length;
+  const renderCategoryCard = ({ item }: { item: Category }) => {
+    const variantCount = getVariantsInCategory(item.name).length;
     return (
       <TouchableOpacity
         style={styles.categoryCard}
         onPress={() => {
-          setSelectedCategory(item);
+          setSelectedCategory(item.name);
           setViewMode('variants');
         }}
         activeOpacity={0.7}
       >
         <View style={styles.categoryCardLeft}>
-          <Text style={styles.categoryName}>{item}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={styles.categoryName}>{item.name}</Text>
+            {item.requireSerialNo && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.brand + '18', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 }}>
+                <Ionicons name="barcode-outline" size={12} color={Colors.brand} />
+                <Text style={{ fontSize: 10, color: Colors.brand, fontWeight: '700', marginLeft: 3 }}>S/N</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.variantCount}>{variantCount} variant{variantCount !== 1 ? 's' : ''}</Text>
         </View>
         <View style={styles.categoryCardRight}>
+          <TouchableOpacity
+            onPress={() => openEditCategoryModal(item)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.7}
+            style={{ padding: 6, marginRight: 4 }}
+          >
+            <Ionicons name="pencil" size={18} color={Colors.info} />
+          </TouchableOpacity>
           <Ionicons name="chevron-forward" size={24} color={Colors.brand} />
         </View>
       </TouchableOpacity>
@@ -529,7 +598,7 @@ export default function CatalogScreen() {
   }
 
   // Categories View
-  const categories = filteredCategories();
+  const filteredCats = filteredCategories();
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -575,9 +644,9 @@ export default function CatalogScreen() {
         </View>
       ) : (
         <FlatList
-          data={categories}
+          data={filteredCats}
           renderItem={renderCategoryCard}
-          keyExtractor={(item) => item}
+          keyExtractor={(item) => item.name}
           contentContainerStyle={styles.categoriesList}
           style={{ flex: 1 }}
         />
@@ -622,6 +691,59 @@ export default function CatalogScreen() {
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.btnText, styles.btnPrimaryText]}>Create & Add Variant</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </Modal>
+      {/* Edit Category Modal */}
+      <Modal visible={showEditCategoryModal} transparent animationType="slide">
+        <SafeAreaView style={styles.modal}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Category</Text>
+              <TouchableOpacity onPress={closeEditCategoryModal} activeOpacity={0.7}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              <Text style={styles.fieldLabel}>Category Name</Text>
+              <TextInput
+                style={styles.input}
+                value={editCategoryName}
+                onChangeText={setEditCategoryName}
+                placeholder="Category name"
+                placeholderTextColor={Colors.textSecondary}
+              />
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.md, paddingBottom: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="barcode-outline" size={18} color={Colors.brand} />
+                    <Text style={[styles.fieldLabel, { marginTop: 0, marginBottom: 0 }]}>Require Serial Numbers</Text>
+                  </View>
+                  <Text style={{ fontSize: 12, color: Colors.textSecondary, marginTop: 4 }}>
+                    Staff must enter a serial number per parcel for this category
+                  </Text>
+                </View>
+                <Switch
+                  value={editCategorySerial}
+                  onValueChange={setEditCategorySerial}
+                  trackColor={{ false: Colors.border, true: Colors.brand }}
+                  thumbColor="#FFF"
+                />
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity onPress={closeEditCategoryModal} style={[styles.btn, styles.btnSecondary]} activeOpacity={0.7}>
+                  <Text style={[styles.btnText, styles.btnSecondaryText]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={saveCategoryMeta} style={[styles.btn, styles.btnPrimary]} activeOpacity={0.7} disabled={savingCategoryMeta}>
+                  <Text style={[styles.btnText, styles.btnPrimaryText]}>
+                    {savingCategoryMeta ? 'Saving...' : 'Save'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>

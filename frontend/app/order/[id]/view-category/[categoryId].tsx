@@ -15,6 +15,8 @@ interface OrderItem {
   size: string;
   quantity: number;
   rate?: string;
+  requireSerialNo?: boolean;
+  serialNumbers?: (string | null)[];
   fulfillment?: (number | null)[];
 }
 
@@ -98,7 +100,15 @@ export default function ViewCategoryScreen() {
           <View key={item.productId} style={styles.variantSection}>
             <View style={styles.variantHeader}>
               <Text style={styles.variantName}>{item.alias}</Text>
-              <Text style={styles.variantSize}>{item.size}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={styles.variantSize}>{item.size}</Text>
+                {item.requireSerialNo && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.brand + '18', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, gap: 3 }}>
+                    <Ionicons name="barcode-outline" size={12} color={Colors.brand} />
+                    <Text style={{ fontSize: 11, color: Colors.brand, fontWeight: '700' }}>S/N Required</Text>
+                  </View>
+                )}
+              </View>
             </View>
 
             {/* Parcels Grid */}
@@ -114,11 +124,27 @@ export default function ViewCategoryScreen() {
                     style={[
                       styles.parcelBox,
                       { borderColor: backgroundColor, backgroundColor: backgroundColor + '15' },
+                      item.requireSerialNo && { minWidth: 140 },
                     ]}
                   >
-                    <Text style={styles.parcelLabel}>P{idx + 1}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 4 }}>
+                      <Text style={styles.parcelLabel}>P{idx + 1}</Text>
+                      {item.requireSerialNo && (
+                        <>
+                          <Text style={[styles.parcelLabel, { opacity: 0.5 }]}>-</Text>
+                          {(() => {
+                            const sn = (item.serialNumbers || [])[idx];
+                            return sn ? (
+                              <Text style={{ fontSize: 10, color: Colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>{sn}</Text>
+                            ) : (
+                              <Text style={{ fontSize: 10, color: Colors.danger, fontWeight: '700' }}>No S/N</Text>
+                            );
+                          })()}
+                        </>
+                      )}
+                    </View>
                     <Text style={[styles.parcelWeight, { color: backgroundColor }]}>
-                      {hasWeight ? `${weight.toFixed(2)}kg` : 'Empty'}
+                      {hasWeight ? `${Number(weight).toFixed(2)}kg` : 'Empty'}
                     </Text>
                   </View>
                 );

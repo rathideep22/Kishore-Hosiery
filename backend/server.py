@@ -58,6 +58,8 @@ class OrderProductItem(BaseModel):
     printName: str
     quantity: int
     rate: Optional[str] = None
+    requireSerialNo: bool = False
+    serialNumbers: Optional[List[Optional[str]]] = None
 
 class UpdateOrderRequest(BaseModel):
     partyName: Optional[str] = None
@@ -97,7 +99,8 @@ class CreateOrderRequest(BaseModel):
 class ParcelFulfillmentRequest(BaseModel):
     productId: str
     parcelIndex: int
-    weight: float
+    weight: Optional[float] = None
+    serialNo: Optional[str] = None
 
 # ─── WebSocket Manager ───────────────────────────────────────────────────────
 
@@ -550,7 +553,8 @@ async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(
                     "size": item['size'],
                     "printName": item['printName'],
                     "quantity": remaining,
-                    "rate": item.get('rate')
+                    "rate": item.get('rate'),
+                    "requireSerialNo": item.get('requireSerialNo', False)
                 })
 
         if remaining_items:
@@ -613,15 +617,15 @@ async def fulfill_parcel(order_id: str, req: ParcelFulfillmentRequest, user: dic
     logger.info(f"Fulfill request: order_id={order_id}, productId={req.productId}, parcelIndex={req.parcelIndex}, weight={req.weight}")
 
     # Try to find order by id field
-    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    order = await db.orders.find_one({"id": order_id})
     if not order:
         # Fallback: try orderId
-        order = await db.orders.find_one({"orderId": order_id}, {"_id": 0})
+        order = await db.orders.find_one({"orderId": order_id})
 
     if not order:
         # Final fallback: try _id as ObjectId
         try:
-            order = await db.orders.find_one({"_id": ObjectId(order_id)}, {"_id": 0})
+            order = await db.orders.find_one({"_id": ObjectId(order_id)})
         except:
             logger.warning(f"Could not parse {order_id} as ObjectId")
 
@@ -636,17 +640,27 @@ async def fulfill_parcel(order_id: str, req: ParcelFulfillmentRequest, user: dic
     for item in items:
         if item['productId'] == req.productId:
             item_found = True
-            # Initialize fulfillment array if not present
-            if 'fulfillment' not in item:
+            # Initialize fulfillment array if not present or None
+            if not item.get('fulfillment'):
                 item['fulfillment'] = [None] * item['quantity']
 
             # Ensure array has enough slots
             while len(item['fulfillment']) < item['quantity']:
                 item['fulfillment'].append(None)
 
-            # Update parcel weight
-            if req.parcelIndex < len(item['fulfillment']):
+            # Update parcel weight (only if provided)
+            if req.weight is not None and req.parcelIndex < len(item['fulfillment']):
                 item['fulfillment'][req.parcelIndex] = req.weight
+
+            # Update parcel serial number (only if provided)
+            if not item.get('serialNumbers'):
+                item['serialNumbers'] = [None] * item['quantity']
+            
+            while len(item['serialNumbers']) < item['quantity']:
+                item['serialNumbers'].append(None)
+                
+            if req.serialNo is not None and req.parcelIndex < len(item['serialNumbers']):
+                item['serialNumbers'][req.parcelIndex] = req.serialNo
 
         updated_items.append(item)
 
@@ -667,9 +681,9 @@ async def fulfill_parcel(order_id: str, req: ParcelFulfillmentRequest, user: dic
     elif fulfilled_count > 0:
         new_status = "Partial Ready"
 
-    # Update order with new items and status
+    # Update order with new items and status using the _id we found
     await db.orders.update_one(
-        {"id": order_id},
+        {"_id": order["_id"]},
         {"$set": {
             "items": updated_items,
             "readinessStatus": new_status,
@@ -677,7 +691,8 @@ async def fulfill_parcel(order_id: str, req: ParcelFulfillmentRequest, user: dic
         }}
     )
 
-    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    # Re-fetch for return and broadcast
+    updated = await db.orders.find_one({"_id": order["_id"]}, {"_id": 0})
     await create_audit_log(user['id'], "PARCEL_FULFILLED", order_id,
         f"Parcel {req.parcelIndex + 1} for {req.productId} fulfilled with {req.weight}kg")
     await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
@@ -689,7 +704,43 @@ async def fulfill_parcel(order_id: str, req: ParcelFulfillmentRequest, user: dic
 @api_router.get("/products/categories")
 async def get_categories(user: dict = Depends(get_auth_user)):
     categories = await db.products.distinct("category")
-    return sorted(categories)
+    # Enrich with metadata
+    metas = await db.category_meta.find({}, {"_id": 0}).to_list(500)
+    meta_map = {m["name"]: m for m in metas}
+    result = []
+    for cat in sorted(categories):
+        meta = meta_map.get(cat, {})
+        result.append({
+            "name": cat,
+            "requireSerialNo": meta.get("requireSerialNo", False),
+        })
+    return result
+
+
+class UpdateCategoryMetaRequest(BaseModel):
+    requireSerialNo: Optional[bool] = None
+    newName: Optional[str] = None
+
+
+@api_router.put("/products/categories/{category_name}")
+async def update_category_meta(category_name: str, req: UpdateCategoryMetaRequest, user: dict = Depends(get_auth_user)):
+    require_admin(user)
+    update_meta: dict = {}
+    if req.requireSerialNo is not None:
+        update_meta["requireSerialNo"] = req.requireSerialNo
+    if req.newName and req.newName.strip() and req.newName.strip() != category_name:
+        new_name = req.newName.strip()
+        # Rename all products in this category
+        await db.products.update_many({"category": category_name}, {"$set": {"category": new_name}})
+        # Update old meta doc name
+        await db.category_meta.delete_one({"name": category_name})
+        category_name = new_name
+    await db.category_meta.update_one(
+        {"name": category_name},
+        {"$set": {**update_meta, "name": category_name}},
+        upsert=True
+    )
+    return {"name": category_name, **update_meta}
 
 
 @api_router.get("/products")
