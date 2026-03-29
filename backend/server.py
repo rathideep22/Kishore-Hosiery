@@ -937,19 +937,31 @@ async def get_audit_logs(user: dict = Depends(get_auth_user), limit: int = 50):
 @api_router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
     if not token:
+        logger.warning("WebSocket connection rejected: no token provided")
         await websocket.close(code=4001)
         return
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user = await db.users.find_one({"id": payload['userId']}, {"_id": 0})
         if not user:
+            logger.warning(f"WebSocket connection rejected: user not found {payload.get('userId')}")
             await websocket.close(code=4001)
             return
-    except Exception:
+    except jwt.ExpiredSignatureError:
+        logger.warning("WebSocket connection rejected: token expired")
+        await websocket.close(code=4001)
+        return
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"WebSocket connection rejected: invalid token - {str(e)}")
+        await websocket.close(code=4001)
+        return
+    except Exception as e:
+        logger.error(f"WebSocket connection error: {str(e)}")
         await websocket.close(code=4001)
         return
 
     await websocket.accept()
+    logger.info(f"WebSocket connection accepted for user {user['id']}")
     await manager.connect(websocket, user['id'])
     try:
         while True:
@@ -958,7 +970,8 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
         manager.disconnect(user['id'])
-    except Exception:
+    except Exception as e:
+        logger.error(f"WebSocket error for user {user['id']}: {str(e)}")
         manager.disconnect(user['id'])
 
 
