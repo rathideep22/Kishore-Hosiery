@@ -948,6 +948,8 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
     except Exception:
         await websocket.close(code=4001)
         return
+
+    await websocket.accept()
     await manager.connect(websocket, user['id'])
     try:
         while True:
@@ -1024,8 +1026,6 @@ async def startup():
     logger.info("Database seeded successfully")
 
 
-app.include_router(api_router)
-
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -1033,6 +1033,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(api_router)
 
 
 @app.on_event("shutdown")
