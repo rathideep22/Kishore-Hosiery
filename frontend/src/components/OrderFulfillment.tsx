@@ -48,7 +48,7 @@ export function OrderFulfillment({
   const [expandedVariants, setExpandedVariants] = useState<Record<string, boolean>>({}); // Track which variants are expanded
   const [tableViewCategory, setTableViewCategory] = useState<string | null>(null); // Track which category is in table view
   const scrollViewRef = useRef<ScrollView>(null);
-  const debounceTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const debounceTimersRef = useRef<Record<string, any>>({});
   const lastSubmittedRef = useRef<Record<string, string>>({}); // Track last submitted value
   const inputRefs = useRef<Record<string, any>>({}); // Refs to TextInput components
   const variantPositionsRef = useRef<Record<string, number>>({}); // Track Y position of each variant
@@ -372,7 +372,7 @@ export function OrderFulfillment({
                         </View>
                         <Text style={[styles.tableCell, { width: 50, textAlign: 'center', color: Colors.text }]}>{item.quantity}</Text>
                         <Text style={[styles.tableCell, { width: 50, textAlign: 'center', color: Colors.text }]}>{fulfilled}</Text>
-                        <View style={[styles.tableCell, { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+                        <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                           <Text style={[styles.tableCellSmall, { flex: 1 }]}>{weights || '-'}</Text>
                           <View style={[styles.statusBadgeSmall, { backgroundColor: status.color + '20' }]}>
                             <Text style={[styles.statusBadgeText, { color: status.color }]}>{status.label}</Text>
@@ -648,7 +648,7 @@ const styles = StyleSheet.create({
 
   // Table View Styles
   tableViewContainer: {
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surface,
     borderRadius: 8,
     marginHorizontal: Spacing.sm,
     marginVertical: Spacing.sm,

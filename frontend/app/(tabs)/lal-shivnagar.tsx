@@ -209,7 +209,7 @@ export default function LalShivnagarScreen() {
 
       {orders.length === 0 ? (
         <View style={styles.empty}>
-          <Ionicons name="inbox-outline" size={48} color={Colors.border} />
+          <Ionicons name="cube-outline" size={48} color={Colors.border} />
           <Text style={styles.emptyText}>No orders for Lal-Shivnagar gowdown</Text>
         </View>
       ) : (
