@@ -222,27 +222,40 @@ async def health_check():
 
 @api_router.post("/auth/send-otp")
 async def send_otp(req: SendOTPRequest):
-    user = await db.users.find_one({"phone": req.phone}, {"_id": 0})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found. Only pre-registered users can login.")
-    # Mock OTP — in production replace with Twilio
+    # Store OTP for any phone number (user will be created on first verify-otp if doesn't exist)
     await db.otp_store.update_one(
         {"phone": req.phone},
         {"$set": {"otp": MOCK_OTP, "createdAt": datetime.now(timezone.utc).isoformat()}},
         upsert=True
     )
+    logger.info(f"OTP requested for phone: {req.phone}")
     return {"message": "OTP sent successfully", "mock_otp": MOCK_OTP}
 
 
 @api_router.post("/auth/verify-otp")
 async def verify_otp(req: VerifyOTPRequest):
-    user = await db.users.find_one({"phone": req.phone}, {"_id": 0})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    # Verify OTP first
     if req.otp != MOCK_OTP:
         stored = await db.otp_store.find_one({"phone": req.phone})
         if not stored or stored.get('otp') != req.otp:
             raise HTTPException(status_code=400, detail="Invalid OTP")
+
+    # Find or create user
+    user = await db.users.find_one({"phone": req.phone}, {"_id": 0})
+    if not user:
+        # Auto-create new user as staff on first login
+        user = {
+            "id": str(uuid.uuid4()),
+            "phone": req.phone,
+            "firstName": "User",
+            "lastName": req.phone.replace("+91", ""),  # Use phone as last name
+            "role": "staff",
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.users.insert_one(user)
+        logger.info(f"New user auto-created: {req.phone} (ID: {user['id']})")
+
     token = create_token(user)
     return {"token": token, "user": user}
 

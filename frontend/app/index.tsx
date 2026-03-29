@@ -84,7 +84,7 @@ export default function LoginScreen() {
                   autoFocus
                 />
               </View>
-              <Text style={styles.hint}>Only pre-registered users can login</Text>
+              <Text style={styles.hint}>Enter your 10-digit phone number</Text>
               <TouchableOpacity
                 testID="send-otp-btn"
                 style={[styles.btn, loading && styles.btnDisabled]}
