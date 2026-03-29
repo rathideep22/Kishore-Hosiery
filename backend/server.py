@@ -962,7 +962,6 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
         await websocket.close(code=4001)
         return
 
-    await websocket.accept()
     logger.info(f"WebSocket connection accepted for user {user['id']}")
     await manager.connect(websocket, user['id'])
     try:
