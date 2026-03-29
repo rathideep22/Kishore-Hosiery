@@ -89,9 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const connectWebSocket = (tkn: string) => {
-    const wsUrl = process.env.EXPO_PUBLIC_BACKEND_URL
-      ?.replace('https://', 'wss://')
-      .replace('http://', 'ws://');
+    const wsUrl = 'ws://13.60.90.159';
     const ws = new WebSocket(`${wsUrl}/api/ws?token=${tkn}`);
     ws.onmessage = (event) => {
       try {
@@ -102,10 +100,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch {}
     };
+    ws.onerror = () => {
+      // WebSocket connection failed - app still works with polling
+    };
     ws.onclose = () => {
+      // Only retry if we expect WebSocket to work
       setTimeout(() => {
         if (token) connectWebSocket(tkn);
-      }, 5000);
+      }, 10000); // Increased retry interval to reduce server load
     };
     wsRef.current = ws;
   };

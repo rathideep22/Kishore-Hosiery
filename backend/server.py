@@ -211,6 +211,13 @@ async def get_next_order_id():
     return counter['value']
 
 
+# ─── Health Check (Public) ────────────────────────────────────────────────────
+
+@api_router.get("/health")
+async def health_check():
+    return {"status": "ok", "message": "Backend is running"}
+
+
 # ─── Auth Routes ──────────────────────────────────────────────────────────────
 
 @api_router.post("/auth/send-otp")
