@@ -12,7 +12,6 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import jwt
 import asyncio
-from products_data import PRODUCTS_DATA
 
 ROOT_DIR = Path(__file__).parent
 env_path = ROOT_DIR / '.env'
@@ -966,32 +965,9 @@ async def startup():
     await db.products.create_index("category")
     await db.products.create_index("alias", unique=True)
 
-    # Seed products from PRODUCTS_DATA
-    products_data = [
-        {
-            "category": category,
-            "size": size,
-            "printName": printName,
-            "alias": alias
-        }
-        for category, size, printName, alias in PRODUCTS_DATA
-    ]
-
-    for prod in products_data:
-        existing = await db.products.find_one({"alias": prod["alias"]})
-        if not existing:
-            product_doc = {
-                "id": str(uuid.uuid4()),
-                "category": prod["category"],
-                "size": prod["size"],
-                "printName": prod["printName"],
-                "alias": prod["alias"],
-                "createdAt": datetime.now(timezone.utc).isoformat(),
-                "updatedAt": datetime.now(timezone.utc).isoformat()
-            }
-            await db.products.insert_one(product_doc)
-
-    logger.info("Products seeded successfully")
+    # Products are seeded via seed_products.py script from ListofItems.xlsx
+    product_count = await db.products.count_documents({})
+    logger.info(f"Products in database: {product_count}")
 
     # Seed gowdowns
     gowdowns = ["Sundha", "Lal-Shivnagar"]
