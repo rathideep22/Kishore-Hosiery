@@ -94,86 +94,120 @@ export default function ViewCategoryScreen() {
         </View>
       </View>
 
-      {/* Variants with Weights */}
+      {/* Variants with Table View */}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {categoryItems.map((item) => (
-          <View key={item.productId} style={styles.variantSection}>
-            <View style={styles.variantHeader}>
-              <Text style={styles.variantName}>{item.alias}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.variantSize}>{item.size}</Text>
+        {categoryItems.map((item) => {
+          const totalWeight = ((item.fulfillment || []).reduce((sum: number, w) => sum + (w || 0), 0)).toFixed(2);
+          const fulfilledCount = (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
+
+          return (
+            <View key={item.productId} style={styles.variantSection}>
+              {/* Variant Header */}
+              <View style={styles.variantHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.variantName}>{item.alias}</Text>
+                  <Text style={styles.variantSize}>{item.size}</Text>
+                </View>
                 {item.requireSerialNo && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.brand + '18', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, gap: 3 }}>
-                    <Ionicons name="barcode-outline" size={12} color={Colors.brand} />
-                    <Text style={{ fontSize: 11, color: Colors.brand, fontWeight: '700' }}>S/N Required</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.brand + '18', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, gap: 4 }}>
+                    <Ionicons name="barcode-outline" size={14} color={Colors.brand} />
+                    <Text style={{ fontSize: 12, color: Colors.brand, fontWeight: '700' }}>Serial Required</Text>
                   </View>
                 )}
               </View>
-            </View>
 
-            {/* Parcels Grid */}
-            <View style={styles.parcelsGrid}>
-              {Array.from({ length: item.quantity }).map((_, idx) => {
-                const weight = item.fulfillment?.[idx];
-                const hasWeight = weight !== null && weight !== undefined;
-                const backgroundColor = hasWeight ? Colors.success : Colors.warning;
+              {/* Table */}
+              <View style={styles.table}>
+                {/* Table Header */}
+                <View style={styles.tableRow}>
+                  <Text style={[styles.tableCell, styles.tableCellHeader, styles.cellParcel]}>Parcel</Text>
+                  {item.requireSerialNo && (
+                    <Text style={[styles.tableCell, styles.tableCellHeader, styles.cellSerial]}>Serial No</Text>
+                  )}
+                  <Text style={[styles.tableCell, styles.tableCellHeader, styles.cellWeight]}>Weight (kg)</Text>
+                </View>
 
-                return (
-                  <View
-                    key={idx}
-                    style={[
-                      styles.parcelBox,
-                      { borderColor: backgroundColor, backgroundColor: backgroundColor + '15' },
-                      item.requireSerialNo && { minWidth: 140 },
-                    ]}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 4 }}>
-                      <Text style={styles.parcelLabel}>P{idx + 1}</Text>
+                {/* Table Rows */}
+                {Array.from({ length: item.quantity }).map((_, idx) => {
+                  const weight = item.fulfillment?.[idx];
+                  const hasWeight = weight !== null && weight !== undefined;
+                  const serial = (item.serialNumbers || [])[idx];
+                  const hasSerial = serial && serial.trim() !== '';
+
+                  return (
+                    <View
+                      key={idx}
+                      style={[
+                        styles.tableRow,
+                        hasWeight && styles.tableRowFilled,
+                        !hasWeight && styles.tableRowEmpty,
+                      ]}
+                    >
+                      <Text style={[styles.tableCell, styles.cellParcel, { fontWeight: '600' }]}>
+                        P{idx + 1}
+                      </Text>
                       {item.requireSerialNo && (
-                        <>
-                          <Text style={[styles.parcelLabel, { opacity: 0.5 }]}>-</Text>
-                          {(() => {
-                            const sn = (item.serialNumbers || [])[idx];
-                            return sn ? (
-                              <Text style={{ fontSize: 10, color: Colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>{sn}</Text>
-                            ) : (
-                              <Text style={{ fontSize: 10, color: Colors.danger, fontWeight: '700' }}>No S/N</Text>
-                            );
-                          })()}
-                        </>
+                        <Text
+                          style={[
+                            styles.tableCell,
+                            styles.cellSerial,
+                            !hasSerial && styles.cellMissing,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {hasSerial ? serial : '—'}
+                        </Text>
                       )}
+                      <Text
+                        style={[
+                          styles.tableCell,
+                          styles.cellWeight,
+                          hasWeight && styles.cellFilledWeight,
+                          !hasWeight && styles.cellEmptyWeight,
+                        ]}
+                      >
+                        {hasWeight ? Number(weight).toFixed(2) : '—'}
+                      </Text>
                     </View>
-                    <Text style={[styles.parcelWeight, { color: backgroundColor }]}>
-                      {hasWeight ? `${Number(weight).toFixed(2)}kg` : 'Empty'}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
+                  );
+                })}
 
-            {/* Summary */}
-            <View style={styles.summary}>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Total Qty:</Text>
-                <Text style={styles.summaryValue}>{item.quantity}</Text>
+                {/* Table Footer - Total Row */}
+                <View style={[styles.tableRow, styles.tableTotalRow]}>
+                  <Text style={[styles.tableCell, styles.cellParcel, { fontWeight: '700' }]}>
+                    Total
+                  </Text>
+                  {item.requireSerialNo && (
+                    <Text style={[styles.tableCell, styles.cellSerial, { fontWeight: '600' }]}>
+                      {fulfilledCount}/{item.quantity}
+                    </Text>
+                  )}
+                  <Text style={[styles.tableCell, styles.cellWeight, { fontWeight: '700', color: Colors.brand }]}>
+                    {totalWeight}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Fulfilled:</Text>
-                <Text style={styles.summaryValue}>
-                  {(item.fulfillment || []).filter(w => w !== null && w !== undefined).length}
-                </Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Total Weight:</Text>
-                <Text style={styles.summaryValue}>
-                  {((item.fulfillment || [])
-                    .reduce((sum: number, w) => sum + (w || 0), 0))
-                    .toFixed(2)}kg
-                </Text>
+
+              {/* Summary Stats */}
+              <View style={styles.statsRow}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>Quantity</Text>
+                  <Text style={styles.statValue}>{item.quantity}</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>Fulfilled</Text>
+                  <Text style={[styles.statValue, { color: fulfilledCount === item.quantity ? Colors.success : fulfilledCount > 0 ? Colors.warning : Colors.danger }]}>
+                    {fulfilledCount}
+                  </Text>
+                </View>
+                <View style={[styles.statBox, { flex: 1.2 }]}>
+                  <Text style={styles.statLabel}>Total Weight</Text>
+                  <Text style={[styles.statValue, { color: Colors.brand }]}>{totalWeight} kg</Text>
+                </View>
               </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -269,52 +303,88 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: Spacing.xs,
   },
-  parcelsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.md,
+  table: {
     marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
-  parcelBox: {
-    flex: 1,
-    minWidth: 80,
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.md,
-    borderRadius: 8,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  parcelLabel: {
-    fontSize: FontSize.xs,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-    textTransform: 'uppercase',
+  tableRowFilled: {
+    backgroundColor: Colors.success + '08',
   },
-  parcelWeight: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
+  tableRowEmpty: {
+    backgroundColor: Colors.warning + '08',
   },
-  summary: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: Spacing.md,
+  tableTotalRow: {
     backgroundColor: Colors.surface,
-    borderRadius: 8,
+    borderBottomWidth: 0,
+    fontWeight: '700',
   },
-  summaryItem: {
+  tableCell: {
+    fontSize: FontSize.sm,
+    color: Colors.text,
+    flex: 1,
+  },
+  tableCellHeader: {
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    fontSize: FontSize.xs,
+    textTransform: 'uppercase',
+    backgroundColor: Colors.surface,
+    paddingVertical: Spacing.md,
+  },
+  cellParcel: {
+    flex: 0.6,
+    textAlign: 'center',
+  },
+  cellSerial: {
+    flex: 1.2,
+  },
+  cellWeight: {
+    flex: 0.8,
+    textAlign: 'right',
+  },
+  cellMissing: {
+    color: Colors.danger,
+    fontWeight: '600',
+  },
+  cellFilledWeight: {
+    color: Colors.success,
+    fontWeight: '600',
+  },
+  cellEmptyWeight: {
+    color: Colors.textSecondary,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  statBox: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: 8,
     alignItems: 'center',
   },
-  summaryLabel: {
+  statLabel: {
     fontSize: FontSize.xs,
     color: Colors.textSecondary,
     marginBottom: Spacing.xs,
+    fontWeight: '500',
   },
-  summaryValue: {
-    fontSize: FontSize.md,
+  statValue: {
+    fontSize: FontSize.lg,
     fontWeight: '700',
-    color: Colors.brand,
+    color: Colors.text,
   },
   footer: {
     paddingHorizontal: Spacing.md,
