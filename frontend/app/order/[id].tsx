@@ -71,6 +71,7 @@ export default function OrderDetailScreen() {
   const [actionLoading, setActionLoading] = useState('');
   const [billNo, setBillNo] = useState('');
   const [savingBill, setSavingBill] = useState(false);
+  const [editingBill, setEditingBill] = useState(false);
 
 
   // Edit modal
@@ -664,29 +665,43 @@ export default function OrderDetailScreen() {
           {order.dispatched && (isAdmin || isAccountant) && (
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>BILL NUMBER</Text>
-              <View style={styles.billRow}>
-                <TextInput
-                  style={styles.billInput}
-                  value={billNo}
-                  onChangeText={setBillNo}
-                  placeholder="Enter bill number"
-                  placeholderTextColor={Colors.textSecondary}
-                />
-                <TouchableOpacity
-                  style={[styles.billSaveBtn, savingBill && { opacity: 0.6 }]}
-                  onPress={saveBillNo}
-                  disabled={savingBill}
-                  activeOpacity={0.7}
-                >
-                  {savingBill ? (
-                    <ActivityIndicator size="small" color="#FFF" />
-                  ) : (
-                    <Text style={styles.billSaveBtnText}>Save</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-              {order.billNo && (
-                <Text style={styles.billCurrent}>Current: {order.billNo}</Text>
+              {order.billNo && !editingBill ? (
+                <View style={styles.billRow}>
+                  <View style={styles.billDisplay}>
+                    <Text style={styles.billDisplayText}>{order.billNo}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.billEditBtn}
+                    onPress={() => { setBillNo(order.billNo || ''); setEditingBill(true); }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="create-outline" size={18} color="#FFF" />
+                    <Text style={styles.billSaveBtnText}>Edit</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.billRow}>
+                  <TextInput
+                    style={styles.billInput}
+                    value={billNo}
+                    onChangeText={setBillNo}
+                    placeholder="Enter bill number"
+                    placeholderTextColor={Colors.textSecondary}
+                    autoFocus={editingBill}
+                  />
+                  <TouchableOpacity
+                    style={[styles.billSaveBtn, savingBill && { opacity: 0.6 }]}
+                    onPress={() => { saveBillNo(); setEditingBill(false); }}
+                    disabled={savingBill}
+                    activeOpacity={0.7}
+                  >
+                    {savingBill ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <Text style={styles.billSaveBtnText}>Save</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           )}
@@ -1162,8 +1177,10 @@ const styles = StyleSheet.create({
   billRow: { flexDirection: 'row', gap: Spacing.md, alignItems: 'center' },
   billInput: { flex: 1, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: Spacing.lg, height: 48, fontSize: FontSize.md, color: Colors.text, backgroundColor: Colors.bg },
   billSaveBtn: { backgroundColor: Colors.brand, borderRadius: 8, height: 48, paddingHorizontal: Spacing.xl, justifyContent: 'center', alignItems: 'center' },
+  billEditBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 8, height: 48, paddingHorizontal: Spacing.xl, justifyContent: 'center', alignItems: 'center', gap: Spacing.xs },
   billSaveBtnText: { color: Colors.textInverse, fontSize: FontSize.md, fontWeight: '700' },
-  billCurrent: { fontSize: FontSize.sm, color: Colors.success, fontWeight: '600', marginTop: Spacing.sm },
+  billDisplay: { flex: 1, backgroundColor: Colors.bgSecondary, borderRadius: 8, paddingHorizontal: Spacing.lg, height: 48, justifyContent: 'center', borderWidth: 1, borderColor: Colors.border },
+  billDisplayText: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
   // Complete Order
   completeBtn: { flexDirection: 'row', backgroundColor: Colors.success, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
   completeBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },

@@ -294,13 +294,15 @@ async def get_orders(
     user: dict = Depends(get_auth_user),
     status: Optional[str] = None,
     search: Optional[str] = None,
-    godown: Optional[str] = None
+    godown: Optional[str] = None,
+    include_completed: Optional[bool] = False
 ):
     conditions = []
     user_role = user.get('role', 'staff')
 
-    # Exclude completed orders from normal views
-    conditions.append({"completed": {"$ne": True}})
+    # Exclude completed orders from normal views (unless explicitly requested)
+    if not include_completed:
+        conditions.append({"completed": {"$ne": True}})
 
     # Accountant: sees all dispatched (non-completed) orders
     if user_role == 'accountant':

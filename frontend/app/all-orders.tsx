@@ -72,8 +72,8 @@ export default function AllOrdersScreen() {
   const fetchOrders = useCallback(async () => {
     try {
       const [sundhData, lalShivData] = await Promise.all([
-        api.get('/orders?godown=Sundha'),
-        api.get('/orders?godown=Lal-Shivnagar'),
+        api.get('/orders?godown=Sundha&include_completed=true'),
+        api.get('/orders?godown=Lal-Shivnagar&include_completed=true'),
       ]);
       const allData = [...(sundhData || []), ...(lalShivData || [])];
       setAllOrders(allData);
