@@ -54,8 +54,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         AsyncStorage.getItem('user'),
       ]);
       if (savedToken && savedUser) {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
+        // Validate token by calling /me endpoint
+        try {
+          api.setToken(savedToken);
+          const user = await api.get('/auth/me');
+          setToken(savedToken);
+          setUser(user);
+        } catch {
+          // Token is invalid/expired, clear it
+          await AsyncStorage.removeItem('token');
+          await AsyncStorage.removeItem('user');
+          api.setToken(null);
+        }
       }
     } catch {} finally {
       setIsLoading(false);
