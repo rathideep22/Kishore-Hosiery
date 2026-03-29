@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { Colors, FontSize } from '../../src/constants/theme';
@@ -16,6 +17,7 @@ function Badge({ count }: { count: number }) {
 export default function TabLayout() {
   const { user, unreadCount } = useAuth();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isAdmin = user?.role === 'admin';
   const isAccountant = user?.role === 'accountant';
   const hideLabels = width < 390;
@@ -24,7 +26,11 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: [styles.tabBar, hideLabels && { height: 50, paddingBottom: 0 }],
+        tabBarStyle: [
+          styles.tabBar,
+          hideLabels && { height: 50, paddingBottom: insets.bottom || 6 },
+          { paddingBottom: Math.max(insets.bottom, 6) }
+        ],
         tabBarActiveTintColor: Colors.brand,
         tabBarInactiveTintColor: Colors.textSecondary,
         tabBarLabelStyle: [styles.tabLabel, hideLabels && { display: 'none' }],
@@ -100,7 +106,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.border,
     height: 60,
-    paddingBottom: 6,
   },
   tabLabel: { fontSize: FontSize.xs, fontWeight: '600' },
   badge: {
