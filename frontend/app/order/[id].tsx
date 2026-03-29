@@ -107,7 +107,12 @@ export default function OrderDetailScreen() {
     try {
       const updated = await api.put(`/orders/${id}/bill`, { billNo: billNo.trim() });
       setOrder(updated);
-      Alert.alert('Success', 'Bill number saved');
+      if (isAccountant) {
+        Alert.alert('Success', 'Bill number saved');
+        router.back();
+      } else {
+        Alert.alert('Success', 'Bill number saved');
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -116,18 +121,12 @@ export default function OrderDetailScreen() {
   };
 
   const completeOrder = async () => {
-    Alert.alert('Complete Order', 'Mark this order as completed? It will no longer appear in active orders.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Complete', style: 'destructive', onPress: async () => {
-        try {
-          await api.put(`/orders/${id}/complete`);
-          Alert.alert('Done', 'Order completed');
-          router.back();
-        } catch (e: any) {
-          Alert.alert('Error', e.message);
-        }
-      }},
-    ]);
+    try {
+      await api.put(`/orders/${id}/complete`, {});
+      router.back();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
   };
 
   useEffect(() => { fetchOrder(); }, []);
@@ -473,8 +472,8 @@ export default function OrderDetailScreen() {
                 <Text style={styles.compactPartyName}>{order.partyName}</Text>
                 <Text style={styles.compactLocation}>{order.location}</Text>
               </View>
-              <View style={[styles.compactStatusBadge, { backgroundColor: (order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
-                <Text style={[styles.compactStatusText, { color: order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
+              <View style={[styles.compactStatusBadge, { backgroundColor: (order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
+                <Text style={[styles.compactStatusText, { color: order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
                   {order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
                 </Text>
               </View>
@@ -512,9 +511,9 @@ export default function OrderDetailScreen() {
             <View style={styles.section}>
               <Text style={styles.partyName}>{order.partyName}</Text>
               <Text style={styles.locationText}>{order.location}</Text>
-              <View style={[styles.statusBadge, { backgroundColor: (order.readinessStatus === 'Bill Generated' ? Colors.brand : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
-                <Text style={[styles.statusBadgeText, { color: order.readinessStatus === 'Bill Generated' ? Colors.brand : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Ready' ? Colors.success : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
-                  {order.readinessStatus === 'Bill Generated' ? 'BILL GENERATED' : order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
+              <View style={[styles.statusBadge, { backgroundColor: (order.readinessStatus === 'Bill Generated' ? '#8B5CF6' : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
+                <Text style={[styles.statusBadgeText, { color: order.readinessStatus === 'Bill Generated' ? '#8B5CF6' : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
+                  {order.readinessStatus === 'Completed' ? 'COMPLETED' : order.readinessStatus === 'Bill Generated' ? 'BILL GENERATED' : order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
                 </Text>
               </View>
             </View>

@@ -14,12 +14,13 @@ import { Colors, FontSize, Spacing } from '../../src/constants/theme';
 
 interface Stats {
   totalActive: number;
-  ready: number;
-  partialReady: number;
-  pending: number;
-  dispatchedToday: number;
-  noInvoice: number;
-  noTransport: number;
+  ready?: number;
+  partialReady?: number;
+  pending?: number;
+  dispatched?: number;
+  billGenerated?: number;
+  completed?: number;
+  needsBill?: number;
 }
 
 interface Order {
@@ -50,10 +51,12 @@ function StatCard({ label, value, color, icon, width }: { label: string; value: 
 }
 
 function OrderRow({ order, onPress }: { order: Order; onPress: () => void }) {
-  const statusColor = order.dispatched ? Colors.textSecondary
-    : order.readinessStatus === 'Ready' ? Colors.success
-      : order.readinessStatus === 'Partial Ready' ? Colors.warning
-        : Colors.danger;
+  const statusColor = order.readinessStatus === 'Completed' ? Colors.success
+    : order.readinessStatus === 'Bill Generated' ? '#8B5CF6'
+      : order.dispatched ? Colors.textSecondary
+        : order.readinessStatus === 'Ready' ? Colors.info
+          : order.readinessStatus === 'Partial Ready' ? Colors.warning
+            : Colors.danger;
 
   return (
     <TouchableOpacity testID={`order-row-${order.orderId}`} style={styles.orderRow} onPress={onPress} activeOpacity={0.7}>
@@ -64,7 +67,7 @@ function OrderRow({ order, onPress }: { order: Order; onPress: () => void }) {
       <View style={styles.orderRight}>
         <View style={[styles.statusPill, { backgroundColor: statusColor + '18' }]}>
           <Text style={[styles.statusText, { color: statusColor }]}>
-            {order.dispatched ? 'Dispatched' : order.readinessStatus}
+            {order.readinessStatus === 'Completed' ? 'Completed' : order.readinessStatus === 'Bill Generated' ? 'Bill Generated' : order.dispatched ? 'Dispatched' : order.readinessStatus}
           </Text>
         </View>
         <Text style={styles.parcelsText}>{order.totalParcels} parcels</Text>
@@ -96,12 +99,11 @@ export default function DashboardScreen() {
       // Merge all orders from both godowns
       const allOrders = [...(sundhOrdersData || []), ...(lalShivOrdersData || [])];
 
-      const isAdmin = user?.role === 'admin';
+      const role = user?.role;
       const recentOrders = allOrders
         .filter((order: Order) => {
-          if (isAdmin) {
-            return true; // Admin sees all orders
-          }
+          if (role === 'admin') return true;
+          if (role === 'accountant') return order.dispatched;
           return !order.dispatched; // Staff sees only non-dispatched
         })
         .sort((a: Order, b: Order) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -156,24 +158,40 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {stats && (
+        {stats && user?.role === 'admin' && (
           <View style={styles.statsGrid}>
             <StatCard label="Active" value={stats.totalActive} color={Colors.info} icon="cube" width={width} />
-            <StatCard label="Ready" value={stats.ready} color={Colors.success} icon="checkmark-circle" width={width} />
-            <StatCard label="Partial" value={stats.partialReady} color={Colors.warning} icon="time" width={width} />
-            <StatCard label="Pending" value={stats.pending} color={Colors.danger} icon="alert-circle" width={width} />
-            <StatCard label="Dispatched" value={stats.dispatchedToday} color={Colors.brand} icon="send" width={width} />
-            {user?.role === 'admin' && (
-              <TouchableOpacity
-                style={[styles.allOrdersCard, { width: (width - 32) / 5 - 5 }]}
-                onPress={() => router.push('/all-orders')}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="list" size={18} color={Colors.brand} />
-                <Text style={styles.allOrdersLabel}>All</Text>
-                <Text style={styles.allOrdersLabel}>Orders</Text>
-              </TouchableOpacity>
-            )}
+            <StatCard label="Pending" value={stats.pending || 0} color={Colors.danger} icon="alert-circle" width={width} />
+            <StatCard label="Partial" value={stats.partialReady || 0} color={Colors.warning} icon="time" width={width} />
+            <StatCard label="Ready" value={stats.ready || 0} color={Colors.info} icon="checkmark-circle" width={width} />
+            <StatCard label="Dispatched" value={stats.dispatched || 0} color={Colors.textSecondary} icon="send" width={width} />
+            <StatCard label="Bill Gen" value={stats.billGenerated || 0} color="#8B5CF6" icon="document-text" width={width} />
+            <StatCard label="Completed" value={stats.completed || 0} color={Colors.success} icon="checkmark-done-circle" width={width} />
+            <TouchableOpacity
+              style={[styles.allOrdersCard, { width: (width - 32) / (width < 390 ? 2 : width < 600 ? 3 : 5) - 5 }]}
+              onPress={() => router.push('/all-orders')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="list" size={18} color={Colors.brand} />
+              <Text style={styles.allOrdersLabel}>All</Text>
+              <Text style={styles.allOrdersLabel}>Orders</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {stats && user?.role === 'accountant' && (
+          <View style={styles.statsGrid}>
+            <StatCard label="Needs Bill" value={stats.needsBill || 0} color={Colors.danger} icon="alert-circle" width={width} />
+            <StatCard label="Bill Gen" value={stats.billGenerated || 0} color="#8B5CF6" icon="document-text" width={width} />
+          </View>
+        )}
+
+        {stats && user?.role === 'staff' && (
+          <View style={styles.statsGrid}>
+            <StatCard label="Active" value={stats.totalActive} color={Colors.info} icon="cube" width={width} />
+            <StatCard label="Pending" value={stats.pending || 0} color={Colors.danger} icon="alert-circle" width={width} />
+            <StatCard label="Partial" value={stats.partialReady || 0} color={Colors.warning} icon="time" width={width} />
+            <StatCard label="Ready" value={stats.ready || 0} color={Colors.info} icon="checkmark-circle" width={width} />
           </View>
         )}
 

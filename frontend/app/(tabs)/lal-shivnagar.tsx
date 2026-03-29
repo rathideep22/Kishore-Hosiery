@@ -118,14 +118,16 @@ export default function LalShivnagarScreen() {
   const onRefresh = () => { setRefreshing(true); fetchOrders(); };
 
   const getStatusColor = (order: Order) => {
-    if (order.readinessStatus === 'Bill Generated') return Colors.brand;
+    if (order.readinessStatus === 'Bill Generated') return '#8B5CF6';
     if (order.dispatched) return Colors.textSecondary;
-    if (order.readinessStatus === 'Ready') return Colors.success;
+    if (order.readinessStatus === 'Completed') return Colors.success;
+    if (order.readinessStatus === 'Ready') return Colors.info;
     if (order.readinessStatus === 'Partial Ready') return Colors.warning;
     return Colors.danger;
   };
 
   const getStatusText = (order: Order) => {
+    if (order.readinessStatus === 'Completed') return 'Completed';
     if (order.readinessStatus === 'Bill Generated') return 'Bill Generated';
     return order.dispatched ? 'Dispatched' : order.readinessStatus;
   };

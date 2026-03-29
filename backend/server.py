@@ -294,7 +294,6 @@ async def get_orders(
     godown: Optional[str] = None
 ):
     conditions = []
-    two_days_ago = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
     user_role = user.get('role', 'staff')
 
     # Exclude completed orders from normal views
@@ -303,13 +302,10 @@ async def get_orders(
     # Accountant: sees all dispatched (non-completed) orders
     if user_role == 'accountant':
         conditions.append({"dispatched": True})
-    else:
-        conditions.append({
-            "$or": [
-                {"dispatched": False},
-                {"dispatched": True, "dispatchedAt": {"$gte": two_days_ago}}
-            ]
-        })
+    elif user_role == 'staff':
+        # Staff sees only non-dispatched orders
+        conditions.append({"dispatched": False})
+    # Admin sees all non-completed orders (no filter)
 
     if status == 'ready':
         conditions.append({"readinessStatus": "Ready", "dispatched": False})
@@ -457,6 +453,7 @@ async def complete_order(order_id: str, user: dict = Depends(get_auth_user)):
         raise HTTPException(status_code=404, detail="Order not found")
     update = {
         "completed": True,
+        "readinessStatus": "Completed",
         "completedAt": datetime.now(timezone.utc).isoformat(),
         "updatedAt": datetime.now(timezone.utc).isoformat()
     }
@@ -811,24 +808,52 @@ async def mark_all_read(user: dict = Depends(get_auth_user)):
 
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats(user: dict = Depends(get_auth_user)):
-    base = {"dispatched": False, "completed": {"$ne": True}}
-    total = await db.orders.count_documents(base)
-    ready = await db.orders.count_documents({**base, "readinessStatus": "Ready"})
-    partial = await db.orders.count_documents({**base, "readinessStatus": "Partial Ready"})
-    pending = await db.orders.count_documents({**base, "readinessStatus": "Pending"})
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    dispatched_today = await db.orders.count_documents({
-        "dispatched": True,
-        "completed": {"$ne": True},
-        "dispatchedAt": {"$gte": today_start}
-    })
-    return {
-        "totalActive": total,
-        "ready": ready,
-        "partialReady": partial,
-        "pending": pending,
-        "dispatchedToday": dispatched_today
-    }
+    user_role = user.get('role', 'staff')
+    non_completed = {"completed": {"$ne": True}}
+
+    if user_role == 'admin':
+        # Admin: active = all non-completed
+        total_active = await db.orders.count_documents(non_completed)
+        pending = await db.orders.count_documents({**non_completed, "readinessStatus": "Pending"})
+        partial = await db.orders.count_documents({**non_completed, "readinessStatus": "Partial Ready"})
+        ready = await db.orders.count_documents({**non_completed, "readinessStatus": "Ready"})
+        dispatched = await db.orders.count_documents({**non_completed, "dispatched": True, "readinessStatus": {"$ne": "Bill Generated"}})
+        bill_generated = await db.orders.count_documents({**non_completed, "readinessStatus": "Bill Generated"})
+        completed = await db.orders.count_documents({"completed": True})
+        return {
+            "totalActive": total_active,
+            "pending": pending,
+            "partialReady": partial,
+            "ready": ready,
+            "dispatched": dispatched,
+            "billGenerated": bill_generated,
+            "completed": completed,
+        }
+    elif user_role == 'accountant':
+        # Accountant: active = dispatched orders without bill
+        dispatched_no_bill = await db.orders.count_documents({
+            **non_completed, "dispatched": True,
+            "$or": [{"billNo": None}, {"billNo": {"$exists": False}}, {"billNo": ""}]
+        })
+        bill_generated = await db.orders.count_documents({**non_completed, "readinessStatus": "Bill Generated"})
+        return {
+            "totalActive": dispatched_no_bill,
+            "needsBill": dispatched_no_bill,
+            "billGenerated": bill_generated,
+        }
+    else:
+        # Staff: active = pending + partial + ready (non-dispatched)
+        base = {"dispatched": False, **non_completed}
+        total = await db.orders.count_documents(base)
+        pending = await db.orders.count_documents({**base, "readinessStatus": "Pending"})
+        partial = await db.orders.count_documents({**base, "readinessStatus": "Partial Ready"})
+        ready = await db.orders.count_documents({**base, "readinessStatus": "Ready"})
+        return {
+            "totalActive": total,
+            "pending": pending,
+            "partialReady": partial,
+            "ready": ready,
+        }
 
 
 @api_router.get("/audit-logs")
