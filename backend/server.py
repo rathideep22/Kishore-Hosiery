@@ -1005,35 +1005,6 @@ async def startup():
             })
     logger.info("Gowdowns seeded successfully")
 
-    # Seed admin users
-    admin1 = await db.users.find_one({"phone": "+919999999901"})
-    if not admin1:
-        await db.users.insert_one({
-            "id": str(uuid.uuid4()), "phone": "+919999999901",
-            "firstName": "Kishor", "lastName": "Owner",
-            "role": "admin", "createdAt": datetime.now(timezone.utc).isoformat()
-        })
-    admin2 = await db.users.find_one({"phone": "+919999999902"})
-    if not admin2:
-        await db.users.insert_one({
-            "id": str(uuid.uuid4()), "phone": "+919999999902",
-            "firstName": "Father", "lastName": "Admin",
-            "role": "admin", "createdAt": datetime.now(timezone.utc).isoformat()
-        })
-    staff1 = await db.users.find_one({"phone": "+919999999903"})
-    if not staff1:
-        await db.users.insert_one({
-            "id": str(uuid.uuid4()), "phone": "+919999999903",
-            "firstName": "Raju", "lastName": "Worker",
-            "role": "staff", "createdAt": datetime.now(timezone.utc).isoformat()
-        })
-    admin3 = await db.users.find_one({"phone": "+919909667752"})
-    if not admin3:
-        await db.users.insert_one({
-            "id": str(uuid.uuid4()), "phone": "+919909667752",
-            "firstName": "Admin", "lastName": "User",
-            "role": "admin", "createdAt": datetime.now(timezone.utc).isoformat()
-        })
     counter = await db.counters.find_one({"name": "orderId"})
     if not counter:
         await db.counters.insert_one({"name": "orderId", "value": 0})
