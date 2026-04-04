@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
+import { useResponsive } from '../../src/utils/responsive';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
 
 interface Product {
@@ -27,7 +28,8 @@ type ViewMode = 'categories' | 'variants';
 
 export default function CatalogScreen() {
   const { user } = useAuth();
-  const { width } = useWindowDimensions();
+  const { width } = useResponsive();
+  const isNarrow = width < 420;
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategoriesState] = useState<Category[]>([]);
   const [search, setSearch] = useState('');
@@ -764,26 +766,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+    gap: Spacing.xs,
   },
-  title: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text },
-  subtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  title: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, flex: 1, numberOfLines: 1 },
+  subtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2, numberOfLines: 1 },
 
   // Search
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: Spacing.lg,
-    marginVertical: Spacing.md,
+    marginHorizontal: Spacing.md,
+    marginVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    height: 48,
+    height: 44,
     backgroundColor: Colors.surface,
     borderWidth: 1.5,
     borderColor: Colors.border,
-    borderRadius: 12,
+    borderRadius: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -791,17 +794,17 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   searchIcon: {
-    marginRight: Spacing.md,
+    marginRight: Spacing.xs,
   },
   searchInput: {
     flex: 1,
-    fontSize: FontSize.md,
+    fontSize: FontSize.sm,
     color: Colors.text,
     padding: 0,
   },
 
   // Categories
-  categoriesList: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
+  categoriesList: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.md, gap: Spacing.xs },
   categoryCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -809,32 +812,34 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 12,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    marginBottom: Spacing.md,
+    borderRadius: 10,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    marginBottom: 0,
+    gap: Spacing.xs,
   },
-  categoryCardLeft: { flex: 1 },
-  categoryName: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
-  variantCount: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: Spacing.xs },
-  categoryCardRight: { marginLeft: Spacing.md },
+  categoryCardLeft: { flex: 1, minWidth: 0 },
+  categoryName: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, numberOfLines: 1 },
+  variantCount: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  categoryCardRight: { marginLeft: Spacing.xs, flexShrink: 0 },
 
   // Variants
   variantHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+    gap: Spacing.xs,
   },
-  backBtn: { padding: Spacing.sm, marginRight: Spacing.md },
-  headerTitleContainer: { flex: 1 },
-  headerTitle: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
-  headerSubtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
-  headerActions: { flexDirection: 'row', alignItems: 'center' },
+  backBtn: { padding: Spacing.xs, minWidth: 40, minHeight: 40, justifyContent: 'center', alignItems: 'center' },
+  headerTitleContainer: { flex: 1, minWidth: 0 },
+  headerTitle: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, numberOfLines: 1 },
+  headerSubtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2, numberOfLines: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
 
-  variantsList: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.lg },
+  variantsList: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, gap: Spacing.xs },
   variantCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -843,16 +848,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 8,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    marginBottom: 0,
+    gap: Spacing.xs,
   },
-  variantInfo: { flex: 1 },
-  variantAlias: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
-  variantSize: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
-  variantPrintName: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: Spacing.xs },
-  variantActions: { flexDirection: 'row', gap: Spacing.sm, marginLeft: Spacing.md },
-  actionBtn: { padding: Spacing.sm },
+  variantInfo: { flex: 1, minWidth: 0 },
+  variantAlias: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, numberOfLines: 1 },
+  variantSize: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 1, numberOfLines: 1 },
+  variantPrintName: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2, numberOfLines: 1 },
+  variantActions: { flexDirection: 'row', gap: Spacing.xs, marginLeft: Spacing.xs, flexShrink: 0 },
+  actionBtn: { padding: Spacing.xs, minWidth: 36, minHeight: 36, justifyContent: 'center', alignItems: 'center' },
 
   // Empty
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center' },

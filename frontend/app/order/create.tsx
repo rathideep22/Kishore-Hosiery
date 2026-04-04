@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal, FlatList, useWindowDimensions, Switch
@@ -52,6 +52,14 @@ interface Gowdown {
 
 export default function CreateOrderScreen() {
   const router = useRouter();
+  const rateInputRefs = useRef<Record<string, any>>({});
+  const autoAdvanceTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  const { width } = useWindowDimensions();
+  const isNarrow = width < 420;
+
+  const [enableAutoAdvance, setEnableAutoAdvance] = useState(true);
+  const [autoAdvanceDelay, setAutoAdvanceDelay] = useState(2000); // 2 seconds default
+
   const [partyName, setPartyName] = useState('');
   const [location, setLocation] = useState('');
   const [godown, setGodown] = useState('');
@@ -81,6 +89,13 @@ export default function CreateOrderScreen() {
 
   useEffect(() => {
     fetchInitialData();
+  }, []);
+
+  // Cleanup auto-advance timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(autoAdvanceTimers.current).forEach(timer => clearTimeout(timer));
+    };
   }, []);
 
   const fetchInitialData = async () => {
@@ -365,6 +380,38 @@ export default function CreateOrderScreen() {
           <View style={{ width: 40 }} />
         </View>
 
+        {/* Auto-advance settings */}
+        <View style={[styles.settingsRow, isNarrow && styles.settingsRowNarrow]}>
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Auto-Advance</Text>
+            <Switch
+              value={enableAutoAdvance}
+              onValueChange={setEnableAutoAdvance}
+              trackColor={{ false: Colors.border, true: Colors.brand + '40' }}
+              thumbColor={enableAutoAdvance ? Colors.brand : Colors.textSecondary}
+            />
+          </View>
+          {enableAutoAdvance && (
+            <View style={[styles.settingItem, isNarrow && styles.settingItemNarrow]}>
+              <Text style={styles.settingLabel}>Delay (ms)</Text>
+              <View style={[styles.delayButtonsRow, isNarrow && styles.delayButtonsRowNarrow]}>
+                {[2000, 3000, 4000, 5000].map((delay) => (
+                  <TouchableOpacity
+                    key={delay}
+                    style={[styles.delayBtn, isNarrow && styles.delayBtnSmall, autoAdvanceDelay === delay && styles.delayBtnActive]}
+                    onPress={() => setAutoAdvanceDelay(delay)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.delayBtnText, autoAdvanceDelay === delay && styles.delayBtnTextActive]}>
+                      {delay / 1000}s
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+        </View>
+
         <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled">
           <Text style={styles.label}>PARTY NAME</Text>
           <TextInput
@@ -374,6 +421,7 @@ export default function CreateOrderScreen() {
             placeholderTextColor={Colors.textSecondary}
             value={partyName}
             onChangeText={setPartyName}
+            autoCapitalize="words"
           />
 
           <Text style={styles.label}>LOCATION</Text>
@@ -384,6 +432,7 @@ export default function CreateOrderScreen() {
             placeholderTextColor={Colors.textSecondary}
             value={location}
             onChangeText={setLocation}
+            autoCapitalize="words"
           />
 
           <Text style={styles.label}>GOWDOWN</Text>
@@ -556,12 +605,13 @@ export default function CreateOrderScreen() {
                     onPress={() => handleSelectCategory(item)}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.categoryOptionText}>{item}</Text>
+                    <Text style={styles.categoryOptionText} numberOfLines={1} ellipsizeMode="tail">{item}</Text>
                     <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
                   </TouchableOpacity>
                 </View>
               )}
               scrollEnabled
+              keyboardShouldPersistTaps="always"
             />
           </View>
         </SafeAreaView>
@@ -605,6 +655,8 @@ export default function CreateOrderScreen() {
               data={filteredVariants}
               keyExtractor={item => item.id}
               scrollEnabled
+              keyboardShouldPersistTaps="always"
+              nestedScrollEnabled
               renderItem={({ item }) => {
                 const selection = variantSelections.find(v => v.productId === item.id);
                 return (
@@ -627,10 +679,32 @@ export default function CreateOrderScreen() {
                           placeholder="Qty"
                           placeholderTextColor={Colors.textSecondary}
                           value={selection.quantity}
-                          onChangeText={(val) => updateVariantField(item.id, 'quantity', val)}
+                          onChangeText={(val) => {
+                            updateVariantField(item.id, 'quantity', val);
+                            // Clear existing timer
+                            if (autoAdvanceTimers.current[item.id]) {
+                              clearTimeout(autoAdvanceTimers.current[item.id]);
+                            }
+                            // Set auto-advance timer only if enabled
+                            if (enableAutoAdvance && val.trim()) {
+                              autoAdvanceTimers.current[item.id] = setTimeout(() => {
+                                rateInputRefs.current[item.id]?.focus();
+                              }, autoAdvanceDelay);
+                            }
+                          }}
+                          onSubmitEditing={() => {
+                            // Focus rate input immediately on Enter
+                            if (autoAdvanceTimers.current[item.id]) {
+                              clearTimeout(autoAdvanceTimers.current[item.id]);
+                            }
+                            rateInputRefs.current[item.id]?.focus();
+                          }}
                           keyboardType="number-pad"
                         />
                         <TextInput
+                          ref={(ref) => {
+                            if (ref) rateInputRefs.current[item.id] = ref;
+                          }}
                           style={[styles.smallInput, styles.rateInput, selectedCategoryRate && styles.rateInputAuto]}
                           placeholder="Rate"
                           placeholderTextColor={Colors.textSecondary}
@@ -666,6 +740,18 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border },
   backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.text },
+  settingsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, backgroundColor: Colors.brand + '08', borderBottomWidth: 1, borderBottomColor: Colors.border },
+  settingsRowNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: Spacing.xs, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
+  settingItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  settingItemNarrow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingVertical: Spacing.xs },
+  settingLabel: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.text },
+  delayButtonsRow: { flexDirection: 'row', gap: Spacing.xs },
+  delayButtonsRowNarrow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs, marginLeft: Spacing.sm },
+  delayBtn: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
+  delayBtnSmall: { paddingHorizontal: Spacing.xs, paddingVertical: 2 },
+  delayBtnActive: { backgroundColor: Colors.brand, borderColor: Colors.brand },
+  delayBtnText: { fontSize: 10, fontWeight: '600', color: Colors.text },
+  delayBtnTextActive: { color: '#fff' },
   scroll: { flex: 1, padding: Spacing.lg },
   label: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.sm, marginTop: Spacing.md },
   subLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.sm, marginTop: Spacing.sm },
@@ -686,7 +772,7 @@ const styles = StyleSheet.create({
   variantSize: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, flex: 1 },
   variantRate: { fontSize: FontSize.sm, color: Colors.brand, fontWeight: '700', minWidth: 60, textAlign: 'right' },
   variantQtyCenter: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, textAlign: 'center', minWidth: 50 },
-  addCategoryBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 8, height: 48, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm, marginVertical: Spacing.lg },
+  addCategoryBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 8, height: 48, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm, marginVertical: Spacing.lg, alignSelf: 'stretch' },
   addCategoryText: { color: Colors.textInverse, fontSize: FontSize.md, fontWeight: '700' },
   summary: { backgroundColor: Colors.bgSecondary, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.lg, marginTop: Spacing.lg },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -706,7 +792,7 @@ const styles = StyleSheet.create({
   categoryRateInputField: { borderWidth: 1, borderColor: Colors.brand, borderRadius: 10, paddingHorizontal: Spacing.md, height: 44, fontSize: FontSize.md, color: Colors.text, backgroundColor: Colors.bg, shadowColor: Colors.brand, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 2, elevation: 1 },
   categoryOptionRow: { borderBottomWidth: 1, borderBottomColor: Colors.border },
   categoryOption: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
-  categoryOptionText: { fontSize: FontSize.md, color: Colors.text, fontWeight: '500' },
+  categoryOptionText: { fontSize: FontSize.md, color: Colors.text, fontWeight: '500', flex: 1, marginRight: Spacing.md },
   categoryRateBox: { backgroundColor: Colors.brand + '10', borderRadius: 8, padding: Spacing.md, marginBottom: Spacing.lg, borderLeftWidth: 3, borderLeftColor: Colors.brand },
   rateBoxHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   categoryRateLabel: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.brand, flex: 1 },
@@ -719,9 +805,9 @@ const styles = StyleSheet.create({
   checkboxChecked: { backgroundColor: Colors.brand, borderColor: Colors.brand },
   variantLabel: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text },
   inputRow: { flexDirection: 'row', gap: Spacing.sm },
-  smallInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: 6, paddingHorizontal: Spacing.sm, height: 36, fontSize: FontSize.sm, color: Colors.text, backgroundColor: Colors.bg },
-  qtyInput: { width: 50 },
-  rateInput: { width: 60 },
+  smallInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: Spacing.md, height: 42, fontSize: FontSize.md, color: Colors.text, backgroundColor: Colors.bg },
+  qtyInput: { width: 70, textAlign: 'center' },
+  rateInput: { width: 80, textAlign: 'center' },
   rateInputAuto: { backgroundColor: Colors.brand + '08', borderColor: Colors.brand },
   addVariantsBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 8, height: 48, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.lg, marginBottom: Spacing.lg },
   addVariantsText: { color: Colors.textInverse, fontSize: FontSize.md, fontWeight: '700' },

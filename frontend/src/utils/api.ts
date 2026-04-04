@@ -1,4 +1,4 @@
-const BACKEND_URL = 'http://13.60.90.159';
+const BACKEND_URL = 'http://localhost:8000';
 
 class ApiClient {
   private token: string | null = null;

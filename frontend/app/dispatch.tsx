@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, ScrollView, TextInput,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, ScrollView, TextInput, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../src/context/AuthContext';
 import { api } from '../src/utils/api';
+import { useResponsive } from '../src/utils/responsive';
 import { Colors, FontSize, Spacing } from '../src/constants/theme';
 
 interface OrderItem {
@@ -19,6 +20,7 @@ interface Order {
   id: string;
   orderId: string;
   partyName: string;
+  location: string;
   totalParcels: number;
   readinessStatus: string;
   godown: string;
@@ -31,11 +33,16 @@ export default function DispatchScreen() {
   const routeParams = useLocalSearchParams<{ godown?: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { width } = useResponsive();
+  const isNarrow = width < 420;
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchNote, setDispatchNote] = useState('');
+  const [showGodownModal, setShowGodownModal] = useState(false);
+  const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
+  const [remainingItems, setRemainingItems] = useState<any[]>([]);
 
   // Get godown from route params
   const godown = routeParams.godown || 'All';
@@ -89,17 +96,58 @@ export default function DispatchScreen() {
     try {
       setDispatching(true);
       // Dispatch each selected order
-      const dispatchPromises = Array.from(selectedOrders).map(orderId =>
-        api.put(`/orders/${orderId}/dispatch`, { dispatchNote: dispatchNote.trim() })
-      );
-      await Promise.all(dispatchPromises);
+      for (const orderId of Array.from(selectedOrders)) {
+        const response = await api.put(`/orders/${orderId}/dispatch`, { dispatchNote: dispatchNote.trim() });
+        console.log('Dispatch response:', response);
 
-      // Auto-redirect back to godown after successful dispatch
+        // Check if remainder order needs godown confirmation
+        if (response && response.needsGodownConfirmation) {
+          console.log('Showing godown modal for order:', orderId);
+          setPendingOrderId(orderId);
+          setRemainingItems(response.remainingItems || []);
+          setShowGodownModal(true);
+          setDispatching(false);
+          return; // Stop and wait for godown selection
+        }
+      }
+
+      // All orders dispatched successfully
+      Alert.alert('Success', 'Orders dispatched successfully');
       setTimeout(() => {
         router.back();
       }, 800);
     } catch (error: any) {
+      console.error('Dispatch error:', error);
       Alert.alert('Error', error.message || 'Failed to dispatch orders');
+    } finally {
+      setDispatching(false);
+    }
+  };
+
+  const handleGodownSelected = async (selectedGodown: string) => {
+    if (!pendingOrderId) return;
+
+    try {
+      setShowGodownModal(false);
+      setDispatching(true);
+
+      // Call dispatch again with godown selected
+      await api.put(`/orders/${pendingOrderId}/dispatch`, {
+        dispatchNote: dispatchNote.trim(),
+        remainderGodown: selectedGodown
+      });
+
+      Alert.alert('Success', 'Order dispatched successfully');
+      setPendingOrderId(null);
+      setRemainingItems([]);
+
+      // Refresh and go back
+      await fetchNonDispatchedOrders();
+      setTimeout(() => {
+        router.back();
+      }, 800);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to dispatch order');
     } finally {
       setDispatching(false);
     }
@@ -136,6 +184,7 @@ export default function DispatchScreen() {
         </View>
         <View style={styles.orderInfo}>
           <Text style={styles.partyName}>{item.partyName}</Text>
+          {item.location && <Text style={styles.locationText}>{item.location}</Text>}
           <View style={styles.metaRow}>
             <Ionicons name="cube-outline" size={12} color={Colors.textSecondary} />
             <Text style={styles.metaText}>{getReadySummary(item)} parcels</Text>
@@ -240,6 +289,50 @@ export default function DispatchScreen() {
           </View>
         </>
       )}
+
+      {/* Godown Selection Modal */}
+      {showGodownModal && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Godown for Remainder Order</Text>
+            <Text style={styles.modalSubtitle}>
+              {remainingItems.reduce((sum: number, item: any) => sum + item.quantity, 0)} parcels remaining
+            </Text>
+
+            <View style={styles.godownOptions}>
+              <TouchableOpacity
+                style={styles.godownBtn}
+                onPress={() => handleGodownSelected('Sundha')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="home" size={24} color={Colors.brand} />
+                <Text style={styles.godownBtnText}>Sundha</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.godownBtn}
+                onPress={() => handleGodownSelected('Lal-Shivnagar')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="storefront" size={24} color={Colors.brand} />
+                <Text style={styles.godownBtnText}>Lal-Shivnagar</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => {
+                setShowGodownModal(false);
+                setPendingOrderId(null);
+                setDispatching(false);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -247,31 +340,41 @@ export default function DispatchScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border, gap: Spacing.md },
-  backButtonTop: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  headerCenter: { flex: 1 },
-  title: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text },
-  subtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 4 },
-  selectionCount: { backgroundColor: Colors.brand, width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-  selectionText: { fontSize: FontSize.md, fontWeight: '700', color: '#fff' },
-  listContent: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.md },
-  orderRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.border, borderRadius: 12, padding: Spacing.md, gap: Spacing.md },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border, gap: Spacing.xs },
+  backButtonTop: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', minHeight: 44, minWidth: 44 },
+  headerCenter: { flex: 1, minWidth: 0 },
+  title: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, numberOfLines: 1 },
+  subtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2, numberOfLines: 1 },
+  selectionCount: { backgroundColor: Colors.brand, width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center', minHeight: 34, minWidth: 34 },
+  selectionText: { fontSize: FontSize.sm, fontWeight: '700', color: '#fff' },
+  listContent: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, gap: Spacing.xs },
+  orderRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm, gap: Spacing.sm },
   orderRowSelected: { borderColor: Colors.brand, backgroundColor: Colors.brand + '08' },
-  checkbox: { width: 28, height: 28, borderWidth: 2, borderColor: Colors.border, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  orderInfo: { flex: 1 },
-  partyName: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text, marginBottom: Spacing.xs },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  metaText: { fontSize: FontSize.xs, color: Colors.textSecondary },
-  statusBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: 4 },
-  statusText: { fontSize: 10, fontWeight: '700' },
+  checkbox: { width: 24, height: 24, borderWidth: 2, borderColor: Colors.border, borderRadius: 6, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  orderInfo: { flex: 1, minWidth: 0 },
+  partyName: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, marginBottom: 1, numberOfLines: 1 },
+  locationText: { fontSize: FontSize.xs, color: Colors.info, fontWeight: '500', marginBottom: 2, numberOfLines: 1 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, flexWrap: 'wrap' },
+  metaText: { fontSize: FontSize.xs, color: Colors.textSecondary, numberOfLines: 1 },
+  statusBadge: { paddingHorizontal: Spacing.xs, paddingVertical: 2, borderRadius: 4, minHeight: 20 },
+  statusText: { fontSize: 9, fontWeight: '700', numberOfLines: 1 },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyText: { fontSize: FontSize.md, color: Colors.success, marginTop: Spacing.lg, fontWeight: '600' },
-  backButtonEmpty: { marginTop: Spacing.xl, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, backgroundColor: Colors.brand, borderRadius: 8 },
-  backButtonEmptyText: { fontSize: FontSize.md, fontWeight: '700', color: '#fff' },
-  footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.lg, borderTopWidth: 1, borderTopColor: Colors.border, gap: Spacing.md },
-  backBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border, paddingVertical: Spacing.md, borderRadius: 8, gap: Spacing.xs },
-  backBtnText: { fontSize: FontSize.md, fontWeight: '700', color: Colors.brand },
-  dispatchBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.brand, paddingVertical: Spacing.md, borderRadius: 8, gap: Spacing.xs, shadowColor: Colors.brand, shadowOpacity: 0.2, shadowRadius: 4, elevation: 2 },
+  emptyText: { fontSize: FontSize.sm, color: Colors.success, marginTop: Spacing.lg, fontWeight: '600' },
+  backButtonEmpty: { marginTop: Spacing.lg, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, backgroundColor: Colors.brand, borderRadius: 8, minHeight: 44 },
+  backButtonEmptyText: { fontSize: FontSize.sm, fontWeight: '700', color: '#fff', numberOfLines: 1 },
+  footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.border, gap: Spacing.xs },
+  backBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border, paddingVertical: Spacing.sm, borderRadius: 8, gap: Spacing.xs, minHeight: 44 },
+  backBtnText: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.brand, numberOfLines: 1 },
+  dispatchBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.brand, paddingVertical: Spacing.sm, borderRadius: 8, gap: Spacing.xs, shadowColor: Colors.brand, shadowOpacity: 0.2, shadowRadius: 4, elevation: 2, minHeight: 44 },
   dispatchBtnDisabled: { backgroundColor: Colors.border, shadowOpacity: 0 },
-  dispatchBtnText: { fontSize: FontSize.md, fontWeight: '700', color: '#fff' },
+  dispatchBtnText: { fontSize: FontSize.xs, fontWeight: '700', color: '#fff', numberOfLines: 1 },
+  modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 1000, paddingHorizontal: Spacing.md },
+  modalContent: { backgroundColor: Colors.bg, borderRadius: 14, padding: Spacing.md, width: '100%', maxWidth: 320, alignItems: 'center' },
+  modalTitle: { fontSize: FontSize.md, fontWeight: '800', color: Colors.text, marginBottom: Spacing.xs, textAlign: 'center', numberOfLines: 1 },
+  modalSubtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginBottom: Spacing.md, textAlign: 'center' },
+  godownOptions: { width: '100%', gap: Spacing.sm, marginBottom: Spacing.md },
+  godownBtn: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.brand, borderRadius: 10, paddingVertical: Spacing.md, gap: Spacing.sm, minHeight: 44 },
+  godownBtnText: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.brand, numberOfLines: 1 },
+  cancelBtn: { width: '100%', borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingVertical: Spacing.sm, minHeight: 40 },
+  cancelBtnText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.text, textAlign: 'center', numberOfLines: 1 },
 });

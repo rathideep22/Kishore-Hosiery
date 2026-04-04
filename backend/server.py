@@ -312,9 +312,12 @@ async def get_orders(
     if not include_completed:
         conditions.append({"completed": {"$ne": True}})
 
-    # Accountant: sees all dispatched (non-completed) orders
+    # Accountant: sees Ready/Partial Ready orders (ready to bill) or dispatched orders
     if user_role == 'accountant':
-        conditions.append({"dispatched": True})
+        conditions.append({"$or": [
+            {"readinessStatus": {"$in": ["Ready", "Partial Ready"]}},
+            {"dispatched": True}
+        ]})
     elif user_role == 'staff':
         # Staff sees only non-dispatched orders
         conditions.append({"dispatched": False})
@@ -535,9 +538,11 @@ async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(
     try:
         body = await request.json()
         dispatch_note = body.get("dispatchNote", "")
+        remainder_godown = body.get("remainderGodown", "")
     except Exception:
         dispatch_note = ""
-        
+        remainder_godown = ""
+
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -567,17 +572,31 @@ async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(
                     "requireSerialNo": item.get('requireSerialNo', False)
                 })
 
-        if remaining_items:
+        # Check if we need to ask for godown selection FIRST
+        has_remaining = len(remaining_items) > 0
+        has_godown_selected = bool(remainder_godown and remainder_godown.strip())
+
+        # If there are remaining items but no godown selected yet, ask for it
+        if has_remaining and not has_godown_selected:
+            response = {
+                "needsGodownConfirmation": True,
+                "remainingItems": remaining_items,
+                "totalRemaining": sum(item['quantity'] for item in remaining_items)
+            }
+            return response
+
+        # If godown is selected, create remainder order
+        if has_remaining and has_godown_selected:
             order_num = await get_next_order_id()
             new_order_id_value = str(uuid.uuid4())
             new_order_display_id = f"KH-{order_num:04d}"
-            
+
             new_order = {
                 "id": new_order_id_value,
                 "orderId": new_order_display_id,
                 "partyName": order['partyName'],
                 "location": order.get('location', ''),
-                "godown": order['godown'],
+                "godown": remainder_godown,
                 "message": f"Remaining parcels from {order['orderId']}",
                 "totalParcels": sum(item['quantity'] for item in remaining_items),
                 "items": remaining_items,
@@ -587,7 +606,8 @@ async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(
                 "createdByName": "System",
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "updatedAt": datetime.now(timezone.utc).isoformat(),
-                "godownDistribution": []
+                "godownDistribution": [],
+                "parentOrderId": order_id
             }
 
             # Insert the new order
@@ -597,7 +617,7 @@ async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(
             admins = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
             for admin_user in admins:
                 await create_notification(admin_user['id'],
-                    f"System created remainder order {new_order_display_id} for {order['partyName']} (from {order['orderId']})",
+                    f"System created remainder order {new_order_display_id} for {order['partyName']} (from {order['orderId']}) in {remainder_godown}",
                     "order_created", new_order_id_value)
 
     update_data = {
@@ -658,19 +678,19 @@ async def fulfill_parcel(order_id: str, req: ParcelFulfillmentRequest, user: dic
             while len(item['fulfillment']) < item['quantity']:
                 item['fulfillment'].append(None)
 
-            # Update parcel weight (only if provided)
-            if req.weight is not None and req.parcelIndex < len(item['fulfillment']):
+            # Update parcel weight (always save if in request)
+            if req.parcelIndex < len(item['fulfillment']):
                 item['fulfillment'][req.parcelIndex] = req.weight
 
-            # Update parcel serial number (only if provided)
+            # Update parcel serial number (always save if in request, convert empty string to None)
             if not item.get('serialNumbers'):
                 item['serialNumbers'] = [None] * item['quantity']
-            
+
             while len(item['serialNumbers']) < item['quantity']:
                 item['serialNumbers'].append(None)
-                
-            if req.serialNo is not None and req.parcelIndex < len(item['serialNumbers']):
-                item['serialNumbers'][req.parcelIndex] = req.serialNo
+
+            if req.parcelIndex < len(item['serialNumbers']):
+                item['serialNumbers'][req.parcelIndex] = req.serialNo if req.serialNo and req.serialNo.strip() else None
 
         updated_items.append(item)
 
@@ -978,6 +998,52 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
 
+async def seed_products_from_xlsx():
+    """Load and seed products from ListofItems.xlsx if not already seeded."""
+    try:
+        import openpyxl
+        xlsx_path = Path(__file__).parent.parent / 'ListofItems.xlsx'
+
+        if not xlsx_path.exists():
+            logger.warning(f"ListofItems.xlsx not found at {xlsx_path}")
+            return
+
+        wb = openpyxl.load_workbook(xlsx_path)
+        ws = wb['Sheet1']
+
+        products = []
+        for row in range(4, ws.max_row + 1):
+            category = ws.cell(row, 1).value
+            size = ws.cell(row, 2).value
+            print_name = ws.cell(row, 3).value
+            alias = ws.cell(row, 4).value
+
+            if not category or not size or not alias:
+                continue
+
+            products.append({
+                "id": str(uuid.uuid4()),
+                "category": str(category).strip(),
+                "size": str(size).strip(),
+                "printName": str(print_name).strip() if print_name else "",
+                "alias": str(alias).strip(),
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+            })
+
+        if products:
+            # Use upsert to avoid duplicates
+            for product in products:
+                await db.products.update_one(
+                    {"alias": product["alias"]},
+                    {"$set": product},
+                    upsert=True
+                )
+            logger.info(f"Seeded {len(products)} products from xlsx")
+    except Exception as e:
+        logger.warning(f"Failed to seed products: {e}")
+
+
 @app.on_event("startup")
 async def startup():
     await db.orders.create_index("orderId")
@@ -988,7 +1054,7 @@ async def startup():
     await db.products.create_index("category")
     await db.products.create_index("alias", unique=True)
 
-    # Products are seeded via seed_products.py script from ListofItems.xlsx
+    # Product seeding disabled - use manual import for original data
     product_count = await db.products.count_documents({})
     logger.info(f"Products in database: {product_count}")
 

@@ -20,7 +20,7 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const isAdmin = user?.role === 'admin';
   const isAccountant = user?.role === 'accountant';
-  const hideLabels = width < 390;
+  const isNarrow = width < 390;
 
   return (
     <Tabs
@@ -32,17 +32,16 @@ export default function TabLayout() {
             height: 60 + Math.max(insets.bottom, 0),
             paddingBottom: Math.max(insets.bottom, 6),
           },
-          hideLabels && { height: 50 + Math.max(insets.bottom, 0) },
         ],
         tabBarActiveTintColor: Colors.brand,
         tabBarInactiveTintColor: Colors.textSecondary,
-        tabBarLabelStyle: [styles.tabLabel, hideLabels && { display: 'none' }],
+        tabBarLabelStyle: [styles.tabLabel, isNarrow && styles.tabLabelSmall],
       }}
     >
       <Tabs.Screen
         name="dashboard"
         options={{
-          title: hideLabels ? '' : 'Dashboard',
+          title: isNarrow ? 'Dash' : 'Dashboard',
           href: '/(tabs)/dashboard',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="grid-outline" size={size} color={color} />
@@ -52,7 +51,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="catalog"
         options={{
-          title: hideLabels ? '' : 'Catalog',
+          title: isNarrow ? 'Cat' : 'Catalog',
           href: isAdmin ? '/(tabs)/catalog' : null,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="list-outline" size={size} color={color} />
@@ -62,7 +61,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="sundha"
         options={{
-          title: hideLabels ? '' : 'Sundha',
+          title: isNarrow ? 'Sun' : 'Sundha',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
@@ -71,7 +70,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="lal-shivnagar"
         options={{
-          title: hideLabels ? '' : 'Lal-Shiv',
+          title: isNarrow ? 'Lal' : 'Lal-Shiv',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="storefront" size={size} color={color} />
           ),
@@ -80,7 +79,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="users"
         options={{
-          title: hideLabels ? '' : 'Users',
+          title: isNarrow ? 'Usr' : 'Users',
           href: isAdmin ? '/(tabs)/users' : null,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" size={size} color={color} />
@@ -90,7 +89,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="notifications"
         options={{
-          title: hideLabels ? '' : 'Alerts',
+          title: isNarrow ? 'Alr' : 'Alerts',
           tabBarIcon: ({ color, size }) => (
             <View>
               <Ionicons name="notifications-outline" size={size} color={color} />
@@ -111,6 +110,7 @@ const styles = StyleSheet.create({
     height: 60,
   },
   tabLabel: { fontSize: FontSize.xs, fontWeight: '600' },
+  tabLabelSmall: { fontSize: 9, fontWeight: '600' },
   badge: {
     position: 'absolute',
     top: -4,

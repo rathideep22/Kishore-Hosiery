@@ -1,13 +1,14 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  ActivityIndicator, Dimensions, Alert, Animated, Keyboard,
+  ActivityIndicator, Dimensions, Alert, Animated, Keyboard, Switch, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api } from '../utils/api';
 import { Colors, FontSize, Spacing } from '../constants/theme';
+import { useResponsive } from '../utils/responsive';
 
 interface OrderItem {
   productId: string;
@@ -46,9 +47,13 @@ export function OrderFulfillment({
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width } = useResponsive();
+  const isNarrow = width < 420;
   const [saving, setSaving] = useState<string | null>(null);
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
   const [serialValues, setSerialValues] = useState<Record<string, string>>({});
+  const [enableAutoAdvance, setEnableAutoAdvance] = useState(true);
+  const [autoAdvanceDelay, setAutoAdvanceDelay] = useState(2000);
   // Active slot = {productId, parcelIndex} — the one being typed into
   const [activeSlot, setActiveSlot] = useState<{ productId: string; parcelIndex: number } | null>(null);
   const latestSerialsRef = useRef<Record<string, string>>({});
@@ -61,6 +66,7 @@ export function OrderFulfillment({
   const serialInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const panelAnim = useRef(new Animated.Value(0)).current;
+  const autoAdvanceTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
 
   // Show/hide entry panel when activeSlot changes
   useEffect(() => {
@@ -100,18 +106,14 @@ export function OrderFulfillment({
     lastSubmittedRef.current[key] = submittedValue;
     setSaving(key);
     try {
-      const weightValue = weight && !isNaN(parseFloat(weight)) ? Math.round(parseFloat(weight) * 100) / 100 : (weight === '' ? null : null);
-      const payload: any = { productId, parcelIndex };
-      
-      // Always send weight if provided (allow null to clear)
-      if (weight !== null && weight !== undefined) {
-        payload.weight = weightValue;
-      }
-      
-      // Always send serialNo if provided (allow empty string to clear)
-      if (serialNo !== null && serialNo !== undefined) {
-        payload.serialNo = serialNo;
-      }
+      const weightValue = weight && !isNaN(parseFloat(weight)) ? Math.round(parseFloat(weight) * 100) / 100 : null;
+      const serialValue = serialNo && serialNo.trim() ? serialNo.trim() : null;
+      const payload: any = {
+        productId,
+        parcelIndex,
+        weight: weightValue,
+        serialNo: serialValue
+      };
 
       console.log('📤 Sending fulfillment update:', payload);
       const response = await api.put(`/orders/${orderId}/fulfill`, payload);
@@ -187,6 +189,13 @@ export function OrderFulfillment({
     }
   }, [orderId, onUpdate]);
 
+  // Cleanup auto-advance timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(autoAdvanceTimersRef.current).forEach(timer => clearTimeout(timer));
+    };
+  }, []);
+
   const handleFulfillmentChange = (productId: string, parcelIndex: number, field: 'weight' | 'serialNo', value: string) => {
     const key = `${productId}-${parcelIndex}`;
     let cleaned = value;
@@ -206,8 +215,16 @@ export function OrderFulfillment({
       if (cleaned) {
         debounceTimersRef.current[key] = setTimeout(() => {
           submitFulfillment(productId, parcelIndex, null, cleaned);
-          // Auto-focus to weight after serial is saved
-          setTimeout(() => weightInputRef.current?.focus(), 100);
+          // Auto-advance to weight: immediately on enter, or after delay if enabled
+          if (enableAutoAdvance) {
+            if (autoAdvanceTimersRef.current[key]) clearTimeout(autoAdvanceTimersRef.current[key]);
+            autoAdvanceTimersRef.current[key] = setTimeout(() => {
+              weightInputRef.current?.focus();
+              delete autoAdvanceTimersRef.current[key];
+            }, autoAdvanceDelay);
+          } else {
+            setTimeout(() => weightInputRef.current?.focus(), 100);
+          }
           delete debounceTimersRef.current[key];
         }, DEBOUNCE_DELAY);
       }
@@ -216,6 +233,17 @@ export function OrderFulfillment({
       if (cleaned || existingSerial) {
         debounceTimersRef.current[key] = setTimeout(() => {
           submitFulfillment(productId, parcelIndex, cleaned, existingSerial);
+          // Auto-advance to next parcel after weight is saved
+          if (enableAutoAdvance && cleaned) {
+            if (autoAdvanceTimersRef.current[key]) clearTimeout(autoAdvanceTimersRef.current[key]);
+            autoAdvanceTimersRef.current[key] = setTimeout(() => {
+              // Move to next parcel
+              if (parcelIndex < currentItem!.quantity - 1) {
+                setActiveSlot({ productId, parcelIndex: parcelIndex + 1 });
+              }
+              delete autoAdvanceTimersRef.current[key];
+            }, autoAdvanceDelay);
+          }
           delete debounceTimersRef.current[key];
         }, DEBOUNCE_DELAY);
       }
@@ -421,17 +449,78 @@ export function OrderFulfillment({
           {/* Drag handle */}
           <View style={styles.panelHandle} />
 
+          <ScrollView style={styles.panelScrollable} showsVerticalScrollIndicator={false}>
           {/* Item header */}
           <View style={styles.panelHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.panelVariant}>{activeItem.size}</Text>
-              <Text style={styles.panelParcelLabel}>
-                Parcel <Text style={{ color: Colors.brand, fontWeight: '800' }}>{activeSlot.parcelIndex + 1}</Text> of {activeItem.quantity}
-              </Text>
+              <View style={styles.panelHeaderRow}>
+                <Text style={styles.panelParcelLabel}>
+                  Parcel <Text style={{ color: Colors.brand, fontWeight: '800' }}>{activeSlot.parcelIndex + 1}</Text> of {activeItem.quantity}
+                </Text>
+                {activeItem.rate && (
+                  <Text style={styles.panelRateText}>₹{activeItem.rate}/unit</Text>
+                )}
+              </View>
             </View>
             <TouchableOpacity onPress={() => { Keyboard.dismiss(); setActiveSlot(null); }} style={styles.panelClose}>
               <Ionicons name="close-circle" size={28} color={Colors.textSecondary} />
             </TouchableOpacity>
+          </View>
+
+          {/* Previous parcels history */}
+          {activeSlot.parcelIndex > 0 && (
+            <View style={styles.previousParcelsSection}>
+              <Text style={styles.previousParcelsTitle}>Completed Parcels</Text>
+              <ScrollView style={styles.previousParcelsScroll} horizontal={false} nestedScrollEnabled={true}>
+                {Array.from({ length: activeSlot.parcelIndex }).map((_, idx) => {
+                  const serial = activeItem.serialNumbers?.[idx] || null;
+                  const weight = activeItem.fulfillment?.[idx] || null;
+                  return (
+                    <View key={idx} style={styles.previousParcelRow}>
+                      <Text style={styles.previousParcelNum}>#{idx + 1}</Text>
+                      <View style={styles.previousParcelDetails}>
+                        {serial && <Text style={styles.previousParcelText}>SN: {serial}</Text>}
+                        {weight && <Text style={styles.previousParcelText}>Weight: {weight} kg</Text>}
+                        {!serial && !weight && <Text style={styles.previousParcelPlaceholder}>Empty</Text>}
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Auto-advance settings */}
+          <View style={[styles.settingsRowPanel, isNarrow && styles.settingsRowPanelNarrow]}>
+            <View style={styles.settingItemPanel}>
+              <Text style={styles.settingLabelPanel}>Auto-Advance</Text>
+              <Switch
+                value={enableAutoAdvance}
+                onValueChange={setEnableAutoAdvance}
+                trackColor={{ false: Colors.border, true: Colors.brand + '40' }}
+                thumbColor={enableAutoAdvance ? Colors.brand : Colors.textSecondary}
+              />
+            </View>
+            {enableAutoAdvance && (
+              <View style={[styles.settingItemPanel, isNarrow && styles.settingItemPanelNarrow]}>
+                <Text style={styles.settingLabelPanel}>Delay</Text>
+                <View style={[styles.delayButtonsRowPanel, isNarrow && styles.delayButtonsRowPanelNarrow]}>
+                  {[2000, 3000, 4000, 5000].map((delay) => (
+                    <TouchableOpacity
+                      key={delay}
+                      style={[styles.delayBtnPanel, autoAdvanceDelay === delay && styles.delayBtnPanelActive]}
+                      onPress={() => setAutoAdvanceDelay(delay)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.delayBtnTextPanel, autoAdvanceDelay === delay && styles.delayBtnTextPanelActive]}>
+                        {delay / 1000}s
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
           </View>
 
           {/* Saving indicator */}
@@ -446,19 +535,19 @@ export function OrderFulfillment({
           {activeItem.requireSerialNo && (
             <View style={styles.inputGroup}>
               <View style={styles.inputLabelRow}>
-                <Ionicons name="barcode-outline" size={16} color={Colors.brand} />
-                <Text style={styles.inputLabel}>Serial Number</Text>
+                <Ionicons name="barcode-outline" size={13} color={Colors.brand} />
+                <Text style={styles.inputLabel}>Serial</Text>
               </View>
               <TextInput
                 ref={serialInputRef}
-                style={[styles.bigInput, activeSerial && styles.bigInputFilled]}
-                placeholder="Scan or type serial number"
+                style={[styles.smallInput, activeSerial && styles.bigInputFilled]}
+                placeholder="Scan or type"
                 placeholderTextColor={Colors.textSecondary}
                 value={activeSerial}
                 onChangeText={val => handleFulfillmentChange(activeSlot.productId, activeSlot.parcelIndex, 'serialNo', val)}
                 returnKeyType="next"
                 onSubmitEditing={() => weightInputRef.current?.focus()}
-                autoCapitalize="characters"
+                keyboardType="number-pad"
               />
             </View>
           )}
@@ -469,23 +558,43 @@ export function OrderFulfillment({
               <Ionicons name="scale-outline" size={16} color={Colors.brand} />
               <Text style={styles.inputLabel}>Weight (kg)</Text>
             </View>
-            <TextInput
-              ref={weightInputRef}
-              style={[styles.bigInput, styles.bigInputWeight, activeWeight && styles.bigInputFilled]}
-              placeholder="0.00"
-              placeholderTextColor={Colors.textSecondary}
-              value={activeWeight}
-              onChangeText={val => handleFulfillmentChange(activeSlot.productId, activeSlot.parcelIndex, 'weight', val)}
-              keyboardType="decimal-pad"
-              returnKeyType="done"
-              onSubmitEditing={() => {
-                const item = items.find(i => i.productId === activeSlot.productId);
-                const w = inputValues[activeKey!] ?? '';
-                const sn = serialValues[activeKey!] ?? null;
-                if (w) submitFulfillment(activeSlot.productId, activeSlot.parcelIndex, w, sn);
-              }}
-            />
+            <View style={styles.inputWithButton}>
+              <TextInput
+                ref={weightInputRef}
+                style={[styles.bigInput, styles.bigInputWeight, activeWeight && styles.bigInputFilled]}
+                placeholder="0.00"
+                placeholderTextColor={Colors.textSecondary}
+                value={activeWeight}
+                onChangeText={val => handleFulfillmentChange(activeSlot.productId, activeSlot.parcelIndex, 'weight', val)}
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+                selectTextOnFocus
+                onBlur={() => {
+                  // Format weight on blur (when user leaves field)
+                  if (activeWeight && !isNaN(parseFloat(activeWeight))) {
+                    const formatted = Math.round(parseFloat(activeWeight) * 100) / 100;
+                    handleFulfillmentChange(activeSlot.productId, activeSlot.parcelIndex, 'weight', formatted.toString());
+                  }
+                }}
+                onSubmitEditing={() => {
+                  const item = items.find(i => i.productId === activeSlot.productId);
+                  const w = inputValues[activeKey!] ?? '';
+                  const sn = serialValues[activeKey!] ?? null;
+                  if (w) submitFulfillment(activeSlot.productId, activeSlot.parcelIndex, w, sn);
+                }}
+              />
+              {activeWeight && (
+                <TouchableOpacity
+                  style={styles.clearBtn}
+                  onPress={() => handleFulfillmentChange(activeSlot.productId, activeSlot.parcelIndex, 'weight', '')}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="close-circle" size={20} color={Colors.danger} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
+          </ScrollView>
 
           {/* Navigation row */}
           <View style={styles.navRow}>
@@ -558,60 +667,62 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
-    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.xs,
+    minHeight: 90,
+    justifyContent: 'center',
   },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerLabel: { fontSize: 10, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1.5, marginBottom: 4 },
-  headerProgressRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
-  headerProgress: { fontSize: 28, fontWeight: '800', color: Colors.text },
-  headerProgressSlash: { fontSize: 22, fontWeight: '400', color: Colors.textSecondary },
-  headerProgressLabel: { fontSize: 13, color: Colors.textSecondary, marginLeft: 4 },
-  progressBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1 },
-  progressBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: Spacing.sm },
+  headerLabel: { fontSize: 9, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1.5, marginBottom: 4 },
+  headerProgressRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, flexWrap: 'wrap' },
+  headerProgress: { fontSize: 26, fontWeight: '800', color: Colors.text },
+  headerProgressSlash: { fontSize: 20, fontWeight: '400', color: Colors.textSecondary },
+  headerProgressLabel: { fontSize: 12, color: Colors.textSecondary, marginLeft: 2 },
+  progressBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 16, borderWidth: 1 },
+  progressBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5, numberOfLines: 1 },
   progressTrack: { height: 6, backgroundColor: Colors.border, borderRadius: 3, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 3 },
   startBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.brand, borderRadius: 12,
-    paddingVertical: 12, paddingHorizontal: 20,
-    justifyContent: 'center', marginTop: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.brand, borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 16,
+    justifyContent: 'center', marginTop: 4, minHeight: 40,
   },
-  startBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
+  startBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13, numberOfLines: 1 },
 
   // Category
   itemsContainer: { flex: 1 },
-  categorySection: { marginTop: Spacing.md, marginHorizontal: Spacing.md },
+  categorySection: { marginTop: Spacing.md, marginHorizontal: Spacing.sm },
   categoryHeader: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', flex: 1,
     backgroundColor: Colors.surface, borderRadius: 12,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm, paddingVertical: Spacing.md,
     borderWidth: 1, borderColor: Colors.border,
   },
-  categoryName: { fontSize: 13, fontWeight: '700', color: Colors.text },
-  categoryMeta: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-  catBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginRight: 4 },
-  catBadgeText: { fontSize: 11, fontWeight: '800' },
+  categoryName: { fontSize: 11, fontWeight: '700', color: Colors.text, flex: 1, numberOfLines: 1, marginRight: Spacing.xs },
+  categoryMeta: { fontSize: 9, color: Colors.textSecondary, marginTop: 2, numberOfLines: 1 },
+  catBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 16, marginRight: 3 },
+  catBadgeText: { fontSize: 10, fontWeight: '800', numberOfLines: 1 },
 
   // Variant row
   variantRow: {
     flexDirection: 'row', alignItems: 'flex-start',
     backgroundColor: Colors.surface, borderRadius: 10,
-    paddingHorizontal: Spacing.md, paddingVertical: 10,
-    marginTop: 6, borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: Spacing.sm, paddingVertical: 8,
+    marginTop: 6, marginHorizontal: Spacing.sm, borderWidth: 1, borderColor: Colors.border,
   },
   variantRowActive: { borderColor: Colors.brand, borderWidth: 2, backgroundColor: Colors.brand + '08' },
-  variantLeft: { flex: 1 },
-  variantSize: { fontSize: 14, fontWeight: '800', color: Colors.text },
-  snBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.brand + '18', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, gap: 2 },
-  snBadgeText: { fontSize: 10, fontWeight: '700', color: Colors.brand },
+  variantLeft: { flex: 1, minWidth: 0 },
+  variantSize: { fontSize: 13, fontWeight: '800', color: Colors.text, numberOfLines: 1 },
+  snBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.brand + '18', borderRadius: 3, paddingHorizontal: 3, paddingVertical: 1, gap: 1 },
+  snBadgeText: { fontSize: 8, fontWeight: '700', color: Colors.brand, numberOfLines: 1 },
 
   // Parcel dots
-  parcelDots: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  parcelDots: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
   dot: {
-    width: 36, height: 36, borderRadius: 10,
+    width: 34, height: 34, borderRadius: 8,
     backgroundColor: Colors.bgSecondary, borderWidth: 1.5, borderColor: Colors.border,
     justifyContent: 'center', alignItems: 'center',
   },
@@ -631,69 +742,100 @@ const styles = StyleSheet.create({
 
   // Summary
   summarySection: {
-    margin: Spacing.md, backgroundColor: Colors.surface,
-    borderRadius: 16, padding: Spacing.lg,
+    margin: Spacing.sm, backgroundColor: Colors.surface,
+    borderRadius: 12, padding: Spacing.md,
     borderWidth: 1, borderColor: Colors.border,
   },
-  summaryTitle: { fontSize: 11, fontWeight: '800', color: Colors.textSecondary, letterSpacing: 1.5, marginBottom: 12 },
-  summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  summaryCategory: { fontSize: 13, fontWeight: '600', color: Colors.text, flex: 1 },
-  summaryBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
-  summaryValue: { fontSize: 13, fontWeight: '700' },
+  summaryTitle: { fontSize: 10, fontWeight: '800', color: Colors.textSecondary, letterSpacing: 1.5, marginBottom: 10 },
+  summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: Spacing.xs },
+  summaryCategory: { fontSize: 12, fontWeight: '600', color: Colors.text, flex: 1, numberOfLines: 1 },
+  summaryBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 16, borderWidth: 1 },
+  summaryValue: { fontSize: 12, fontWeight: '700', numberOfLines: 1 },
   doneBtn: {
-    marginTop: 16, backgroundColor: Colors.brand, borderRadius: 14,
-    paddingVertical: 14, alignItems: 'center',
+    marginTop: 12, backgroundColor: Colors.brand, borderRadius: 12,
+    paddingVertical: 12, alignItems: 'center', minHeight: 44,
   },
-  doneBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
+  doneBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14, numberOfLines: 1 },
 
   // ── Bottom Entry Panel ──
   entryPanel: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: Colors.surface,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: 36,
-    paddingTop: 12,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: 28,
+    paddingTop: 10,
     borderTopWidth: 1, borderColor: Colors.border,
     shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.12, shadowRadius: 12, elevation: 20,
   },
   panelHandle: {
-    width: 40, height: 4, borderRadius: 2,
-    backgroundColor: Colors.border, alignSelf: 'center', marginBottom: 14,
+    width: 36, height: 3, borderRadius: 2,
+    backgroundColor: Colors.border, alignSelf: 'center', marginBottom: 10,
   },
-  panelHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  panelVariant: { fontSize: 20, fontWeight: '800', color: Colors.text },
-  panelParcelLabel: { fontSize: 14, color: Colors.textSecondary, marginTop: 2 },
+  panelScrollable: { maxHeight: 320, paddingHorizontal: 0 },
+  panelHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, flex: 1, paddingHorizontal: Spacing.lg },
+  panelVariant: { fontSize: 18, fontWeight: '800', color: Colors.text, flex: 1, numberOfLines: 1 },
+  panelHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: 1, justifyContent: 'space-between' },
+  panelParcelLabel: { fontSize: 12, color: Colors.textSecondary, numberOfLines: 1 },
+  panelRateText: { fontSize: 12, fontWeight: '700', color: Colors.brand, backgroundColor: Colors.brand + '15', paddingHorizontal: Spacing.xs, paddingVertical: 2, borderRadius: 4, numberOfLines: 1 },
   panelClose: { padding: 4 },
-  savingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  savingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, paddingHorizontal: Spacing.lg },
   savingText: { fontSize: 13, color: Colors.textSecondary },
+  previousParcelsSection: { marginBottom: 10, marginHorizontal: Spacing.lg, maxHeight: 140, backgroundColor: Colors.bgSecondary, borderRadius: 8, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs },
+  previousParcelsTitle: { fontSize: 10, fontWeight: '700', color: Colors.textSecondary, marginBottom: 6, letterSpacing: 0.5 },
+  previousParcelsScroll: { maxHeight: 120 },
+  previousParcelRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingVertical: 4, paddingHorizontal: 4, backgroundColor: Colors.surface, borderRadius: 6, marginBottom: 4, borderWidth: 1, borderColor: Colors.border + '40' },
+  previousParcelNum: { fontSize: 9, fontWeight: '800', color: Colors.brand, minWidth: 24, textAlign: 'center' },
+  previousParcelDetails: { flex: 1 },
+  previousParcelText: { fontSize: 9, fontWeight: '600', color: Colors.text, numberOfLines: 1 },
+  previousParcelPlaceholder: { fontSize: 9, color: Colors.textSecondary, fontStyle: 'italic' },
+  settingsRowPanel: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, backgroundColor: Colors.brand + '08', marginHorizontal: Spacing.lg, paddingHorizontal: Spacing.md, marginBottom: 12, borderRadius: 8 },
+  settingsRowPanelNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 8, paddingHorizontal: Spacing.md, paddingVertical: 8, marginHorizontal: Spacing.lg, marginBottom: 10 },
+  settingItemPanel: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  settingItemPanelNarrow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 0 },
+  settingLabelPanel: { fontSize: 12, fontWeight: '600', color: Colors.text },
+  delayButtonsRowPanel: { flexDirection: 'row', gap: 4 },
+  delayButtonsRowPanelNarrow: { flexDirection: 'row', flexWrap: 'wrap', gap: 3 },
+  delayBtnPanel: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
+  delayBtnPanelActive: { backgroundColor: Colors.brand, borderColor: Colors.brand },
+  delayBtnTextPanel: { fontSize: 9, fontWeight: '600', color: Colors.text },
+  delayBtnTextPanelActive: { color: '#fff' },
 
   // Inputs
-  inputGroup: { marginBottom: 12 },
-  inputLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  inputLabel: { fontSize: 13, fontWeight: '700', color: Colors.text },
+  inputGroup: { marginBottom: 10, paddingHorizontal: Spacing.lg },
+  inputLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
+  inputLabel: { fontSize: 12, fontWeight: '700', color: Colors.text, numberOfLines: 1 },
   bigInput: {
-    width: '100%', height: 56, borderRadius: 14,
+    width: '100%', height: 50, borderRadius: 12,
     borderWidth: 2, borderColor: Colors.border,
-    backgroundColor: Colors.bg, paddingHorizontal: 18,
-    fontSize: 22, fontWeight: '700', color: Colors.text,
+    backgroundColor: Colors.bg, paddingHorizontal: 14,
+    fontSize: 20, fontWeight: '700', color: Colors.text,
     textAlign: 'left',
   },
-  bigInputWeight: { textAlign: 'center', fontSize: 28 },
+  smallInput: {
+    width: '100%', height: 40, borderRadius: 10,
+    borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: Colors.bg, paddingHorizontal: 12,
+    fontSize: 14, fontWeight: '600', color: Colors.text,
+    textAlign: 'left',
+  },
+  bigInputWeight: { textAlign: 'center', fontSize: 24 },
   bigInputFilled: { borderColor: Colors.brand, backgroundColor: Colors.brand + '08' },
+  inputWithButton: { position: 'relative', flexDirection: 'row', alignItems: 'center' },
+  clearBtn: { position: 'absolute', right: 12, padding: 8, justifyContent: 'center', alignItems: 'center' },
 
   // Nav
-  navRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
+  navRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, paddingHorizontal: Spacing.lg },
   navBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-    paddingVertical: 14, borderRadius: 12,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3,
+    paddingVertical: 12, borderRadius: 10,
     backgroundColor: Colors.bgSecondary, borderWidth: 1, borderColor: Colors.border,
   },
-  navBtnText: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  navBtnText: { fontSize: 12, fontWeight: '600', color: Colors.text, numberOfLines: 1 },
   saveBtn: {
-    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: Colors.success, borderRadius: 14, paddingVertical: 16,
+    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: Colors.success, borderRadius: 10, paddingVertical: 14, minHeight: 44,
   },
-  saveBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
+  saveBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14, numberOfLines: 1 },
 });

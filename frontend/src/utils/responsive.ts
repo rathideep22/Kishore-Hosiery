@@ -134,3 +134,40 @@ export function getContainerMaxWidth(width: number): number | string {
   if (width < BREAKPOINTS.xl) return 800;
   return 1000;
 }
+
+/**
+ * Text truncation helper - returns numberOfLines based on screen width
+ * Narrower screens should truncate more aggressively
+ */
+export function getTruncationLines(width: number, defaultLines: number = 2): number {
+  if (width < BREAKPOINTS.sm) return defaultLines;
+  if (width < BREAKPOINTS.md) return defaultLines + 1;
+  return defaultLines + 2;
+}
+
+/**
+ * Button dimensions responsive
+ */
+export function getButtonDimensions(width: number) {
+  if (width < BREAKPOINTS.sm) return { height: 40, minHeight: 40 };
+  if (width < BREAKPOINTS.md) return { height: 44, minHeight: 44 };
+  return { height: 48, minHeight: 48 };
+}
+
+/**
+ * Input dimensions responsive
+ */
+export function getInputDimensions(width: number) {
+  if (width < BREAKPOINTS.sm) return { height: 40, paddingHorizontal: 12 };
+  if (width < BREAKPOINTS.md) return { height: 44, paddingHorizontal: 14 };
+  return { height: 48, paddingHorizontal: 16 };
+}
+
+/**
+ * Get responsive line height based on screen width
+ */
+export function getLineHeight(width: number, baseFontSize: number): number {
+  if (width < BREAKPOINTS.sm) return baseFontSize * 1.3;
+  if (width < BREAKPOINTS.md) return baseFontSize * 1.4;
+  return baseFontSize * 1.5;
+}

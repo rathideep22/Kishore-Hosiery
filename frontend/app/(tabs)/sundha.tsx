@@ -32,6 +32,7 @@ interface Order {
   id: string;
   orderId: string;
   partyName: string;
+  location: string;
   totalParcels: number;
   readinessStatus: string;
   dispatched: boolean;
@@ -91,7 +92,8 @@ export default function SundhaScreen() {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(order =>
         order.orderId.toLowerCase().includes(q) ||
-        order.partyName.toLowerCase().includes(q)
+        order.partyName.toLowerCase().includes(q) ||
+        order.location.toLowerCase().includes(q)
       );
     }
 
@@ -149,7 +151,10 @@ export default function SundhaScreen() {
       activeOpacity={0.7}
     >
       <View style={styles.cardTop}>
-        <Text style={styles.partyName}>{item.partyName}</Text>
+        <View style={styles.cardTopLeft}>
+          <Text style={styles.partyName}>{item.partyName}</Text>
+          {item.location && <Text style={styles.locationBadge}>{item.location}</Text>}
+        </View>
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item) + '18' }]}>
           <Text style={[styles.statusBadgeText, { color: getStatusColor(item) }]}>
             {getStatusText(item)}
@@ -236,11 +241,13 @@ const styles = StyleSheet.create({
   dispatchText: { fontSize: FontSize.sm, fontWeight: '700', color: '#fff' },
   list: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.md },
   card: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, padding: Spacing.lg, marginBottom: Spacing.sm, minHeight: 100 },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.md, gap: Spacing.sm },
+  cardTopLeft: { flex: 1, minWidth: 0 },
   orderId: { fontSize: FontSize.md, fontWeight: '700', color: Colors.brand },
-  statusBadge: { borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
+  statusBadge: { borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4, flexShrink: 0 },
   statusBadgeText: { fontSize: FontSize.xs, fontWeight: '700' },
-  partyName: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text, marginBottom: Spacing.sm },
+  partyName: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text, marginBottom: Spacing.xs, numberOfLines: 1 },
+  locationBadge: { fontSize: FontSize.xs, color: Colors.info, fontWeight: '600', backgroundColor: Colors.info + '15', paddingHorizontal: Spacing.xs, paddingVertical: 2, borderRadius: 4, overflow: 'hidden', numberOfLines: 1 },
   cardMeta: { flexDirection: 'row', gap: Spacing.lg },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   metaText: { fontSize: FontSize.xs, color: Colors.textSecondary },

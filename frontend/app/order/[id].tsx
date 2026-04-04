@@ -63,6 +63,10 @@ export default function OrderDetailScreen() {
   const router = useRouter();
   const { user, wsMessage } = useAuth();
   const isAdmin = user?.role === 'admin';
+
+  useEffect(() => {
+    console.log('Order detail screen - isAdmin:', isAdmin, 'user role:', user?.role);
+  }, [isAdmin, user?.role]);
   const isAccountant = user?.role === 'accountant';
 
   const [order, setOrder] = useState<Order | null>(null);
@@ -72,6 +76,8 @@ export default function OrderDetailScreen() {
   const [billNo, setBillNo] = useState('');
   const [savingBill, setSavingBill] = useState(false);
   const [editingBill, setEditingBill] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
 
   // Edit modal
@@ -419,18 +425,26 @@ export default function OrderDetailScreen() {
   };
 
   const deleteOrder = () => {
-    Alert.alert('Delete Order', 'This action cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          try {
-            await api.del(`/orders/${id}`);
-            router.back();
-          } catch (e: any) { Alert.alert('Error', e.message); }
-        },
-      },
-    ]);
+    console.log('Delete button clicked, order id:', id);
+    setShowDeleteConfirm(true);
+  };
+
+  const performDelete = async () => {
+    console.log('🗑️ Starting delete for order:', id);
+    setIsDeleting(true);
+    try {
+      console.log('Sending DELETE request for order:', id);
+      const response = await api.del(`/orders/${id}`);
+      console.log('✅ Delete response:', response);
+      setShowDeleteConfirm(false);
+      router.replace('/(tabs)/dashboard');
+    } catch (e: any) {
+      console.error('❌ Delete failed:', e);
+      setShowDeleteConfirm(false);
+      Alert.alert('Error', e.message || 'Failed to delete order');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const openEdit = async () => {
@@ -612,32 +626,32 @@ export default function OrderDetailScreen() {
                       <View style={styles.variantsList}>
                         {/* Headers */}
                         <View style={[styles.variantItem, { backgroundColor: 'transparent', paddingHorizontal: 0, paddingVertical: 4, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: Colors.border, borderRadius: 0 }]}>
-                          <Text style={[styles.variantSize, { color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]}>VARIANT</Text>
+                          <Text style={[styles.variantSize, { color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]} numberOfLines={1}>SIZE</Text>
                           {order.dispatched && (isAdmin || isAccountant) ? (
                             <>
-                              <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]}>PARCELS</Text>
-                              <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]}>WEIGHT</Text>
+                              <Text style={[{ flex: 0.6, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]} numberOfLines={1}>QTY</Text>
+                              <Text style={[{ flex: 1.2, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]} numberOfLines={1}>WEIGHT</Text>
                             </>
                           ) : (
-                            <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]}>QTY</Text>
+                            <Text style={[{ flex: 0.8, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]} numberOfLines={1}>QTY</Text>
                           )}
-                          <Text style={[styles.variantRate, { color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]}>RATE</Text>
+                          <Text style={[styles.variantRate, { color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]} numberOfLines={1}>RATE</Text>
                         </View>
                         {items.map((item, idx) => {
                           const fulfilledQty = (item.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length;
                           const totalWeight = (item.fulfillment || []).reduce((sum: number, w: any) => sum + (w || 0), 0).toFixed(2);
                           return (
                             <View key={idx} style={styles.variantItem}>
-                              <Text style={styles.variantSize}>{item.size}</Text>
+                              <Text style={styles.variantSize} numberOfLines={1}>{item.size}</Text>
                               {order.dispatched && (isAdmin || isAccountant) ? (
                                 <>
-                                  <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center' }]}>{fulfilledQty}</Text>
-                                  <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center' }]}>{totalWeight}kg</Text>
+                                  <Text style={{ flex: 0.6, textAlign: 'center', fontSize: FontSize.sm, fontWeight: '700', color: Colors.text }} numberOfLines={1}>{fulfilledQty}</Text>
+                                  <Text style={{ flex: 1.2, textAlign: 'center', fontSize: FontSize.sm, fontWeight: '700', color: Colors.success }} numberOfLines={1}>{totalWeight}kg</Text>
                                 </>
                               ) : (
-                                <Text style={[styles.variantQtyCenter, { flex: 1, textAlign: 'center' }]}>{item.quantity}</Text>
+                                <Text style={{ flex: 0.8, textAlign: 'center', fontSize: FontSize.sm, fontWeight: '700', color: Colors.text }} numberOfLines={1}>{item.quantity}</Text>
                               )}
-                              {item.rate && <Text style={styles.variantRate}>₹{item.rate}</Text>}
+                              {item.rate && <Text style={styles.variantRate} numberOfLines={1}>₹{item.rate}</Text>}
                             </View>
                           );
                         })}
@@ -989,6 +1003,34 @@ export default function OrderDetailScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal visible={showDeleteConfirm} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ backgroundColor: Colors.bg, borderRadius: 12, padding: Spacing.lg, width: '85%', maxWidth: 350 }}>
+            <Text style={{ fontSize: FontSize.lg, fontWeight: '700', color: Colors.text, marginBottom: Spacing.md }}>Delete Order?</Text>
+            <Text style={{ fontSize: FontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.lg }}>This action cannot be undone.</Text>
+            <View style={{ flexDirection: 'row', gap: Spacing.md }}>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: Colors.border, paddingVertical: Spacing.md, borderRadius: 8, justifyContent: 'center', alignItems: 'center' }}
+                onPress={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+              >
+                <Text style={{ fontSize: FontSize.md, fontWeight: '600', color: Colors.text }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: Colors.danger, paddingVertical: Spacing.md, borderRadius: 8, justifyContent: 'center', alignItems: 'center', opacity: isDeleting ? 0.6 : 1 }}
+                onPress={performDelete}
+                disabled={isDeleting}
+              >
+                <Text style={{ fontSize: FontSize.md, fontWeight: '600', color: '#fff' }}>
+                  {isDeleting ? 'Deleting...' : 'Delete'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1004,8 +1046,8 @@ const styles = StyleSheet.create({
   section: { padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border },
   partyName: { fontSize: FontSize.xxl, fontWeight: '900', color: Colors.text },
   locationText: { fontSize: FontSize.md, color: Colors.textSecondary, marginTop: Spacing.xs },
-  statusBadge: { alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, marginTop: Spacing.sm },
-  statusBadgeText: { fontSize: FontSize.sm, fontWeight: '700', letterSpacing: 0.5 },
+  statusBadge: { alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, marginTop: Spacing.sm },
+  statusBadgeText: { fontSize: FontSize.md, fontWeight: '700', letterSpacing: 0.5 },
   sectionLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.md },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
   messageBox: { backgroundColor: Colors.bgSecondary, borderRadius: 8, padding: Spacing.lg, borderWidth: 1, borderColor: Colors.border },
@@ -1047,9 +1089,9 @@ const styles = StyleSheet.create({
   categoryCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.md },
   categoryName: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.md },
   variantsList: { gap: Spacing.sm },
-  variantItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.bgSecondary, borderRadius: 6, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, gap: Spacing.md },
-  variantSize: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, flex: 1 },
-  variantRate: { fontSize: FontSize.sm, color: Colors.brand, fontWeight: '700', minWidth: 60, textAlign: 'right' },
+  variantItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.bgSecondary, borderRadius: 6, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm, gap: Spacing.sm },
+  variantSize: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, flex: 0.8 },
+  variantRate: { fontSize: FontSize.sm, color: Colors.brand, fontWeight: '700', flex: 0.6, textAlign: 'right' },
   variantQtyCenter: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, textAlign: 'center', minWidth: 50 },
   // Gowdown Boxes in Modal
   gowdownBoxes: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.md },
