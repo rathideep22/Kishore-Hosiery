@@ -35,6 +35,7 @@ interface Order {
   dispatched: boolean; dispatchedAt: string | null;
   dispatchNote?: string;
   billNo?: string; completed?: boolean; completedAt?: string | null;
+  billPdfUrl?: string;
   items?: OrderItem[];
   createdByName: string; createdAt: string; updatedAt: string;
 }
@@ -1246,4 +1247,7 @@ const styles = StyleSheet.create({
   // Complete Order
   completeBtn: { flexDirection: 'row', backgroundColor: Colors.success, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
   completeBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
+  // Download PDF Button
+  downloadPdfBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
+  downloadPdfBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
 });
