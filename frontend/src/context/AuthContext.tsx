@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Audio } from 'expo-av';
 import { api } from '../utils/api';
 
 interface User {
@@ -98,6 +99,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await fetchUnreadCount();
   }, []);
 
+  const playNotificationSound = async () => {
+    try {
+      // Enable audio session to play through speaker even in silent mode
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        shouldDuckAndroid: true,
+      });
+
+      const sound = new Audio.Sound();
+
+      // Use a default notification sound from CDN (reliable, always available)
+      await sound.loadAsync({
+        uri: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3',
+      });
+
+      await sound.playAsync();
+
+      // Cleanup after sound finishes
+      setTimeout(() => {
+        sound.unloadAsync().catch(() => {});
+      }, 2000);
+    } catch (error) {
+      console.error('Error playing notification sound:', error);
+    }
+  };
+
   const connectWebSocket = (tkn: string) => {
     const wsUrl = 'ws://13.60.90.159';
     const ws = new WebSocket(`${wsUrl}/api/ws?token=${tkn}`);
@@ -107,6 +135,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setWsMessage(data);
         if (data.type === 'NOTIFICATION') {
           setUnreadCount(prev => prev + 1);
+          // Play notification sound
+          playNotificationSound();
         }
       } catch {}
     };
