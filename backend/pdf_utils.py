@@ -63,136 +63,193 @@ class OrderPDFGenerator:
         pdf = SimpleDocTemplate(
             pdf_buffer,
             pagesize=A4,
-            rightMargin=0.4*inch,
-            leftMargin=0.4*inch,
-            topMargin=0.4*inch,
-            bottomMargin=0.4*inch
+            rightMargin=0.5*inch,
+            leftMargin=0.5*inch,
+            topMargin=0.5*inch,
+            bottomMargin=0.5*inch
         )
 
         # Build PDF content
         elements = []
 
-        # Title
-        title = Paragraph("KISHORE HOSIERY - ORDER BILL", self.title_style)
-        elements.append(title)
-        elements.append(Spacer(1, 0.15*inch))
-
-        # Order Info Section
-        order_info_data = [
-            ["Order ID", order_data.get('orderId', 'N/A'), "Godown", order_data.get('godown', 'N/A')],
-            ["Party Name", order_data.get('partyName', 'N/A'), "Date", order_data.get('createdAt', datetime.now().isoformat())[:10]],
-            ["Location", order_data.get('location', 'N/A'), "Status", order_data.get('readinessStatus', 'Pending')],
-        ]
-
-        order_info_table = Table(order_info_data, colWidths=[1.2*inch, 2*inch, 1.2*inch, 2*inch])
-        order_info_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F3F4F6')),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('PADDING', (0, 0), (-1, -1), 6),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5E7EB')),
+        # ─── Title: Kishor Hosiery (boxed, centered) ─────────────────────────
+        title_table = Table([["Kishor Hosiery"]], colWidths=[2.5*inch])
+        title_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 16),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOX', (0, 0), (-1, -1), 1.2, colors.black),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        # Center the title box
+        title_wrapper = Table([[title_table]], colWidths=[7.5*inch])
+        title_wrapper.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
+        elements.append(title_wrapper)
+        elements.append(Spacer(1, 0.25*inch))
 
-        elements.append(order_info_table)
-        elements.append(Spacer(1, 0.15*inch))
+        # ─── Header Info: Order/Party/Location on left, Date/Godown/Bill on right ──
+        order_date = order_data.get('createdAt', datetime.now().isoformat())[:10]
+        header_data = [
+            [
+                Paragraph(f"<b>Order No:</b> <u>{order_data.get('orderId', 'N/A')}</u>", self.normal_style),
+                Paragraph(f"<b>Date:</b> <u>{order_date}</u>", self.normal_style),
+            ],
+            [
+                Paragraph(f"<b>Party Name:</b> <u>{order_data.get('partyName', 'N/A')}</u>", self.normal_style),
+                Paragraph(f"<b>Godown:</b> <u>{order_data.get('godown', 'N/A')}</u>", self.normal_style),
+            ],
+            [
+                Paragraph(f"<b>Location:</b> <u>{order_data.get('location', 'N/A')}</u>", self.normal_style),
+                Paragraph(f"<b>Bill No:</b> <u>{order_data.get('billNo', 'N/A')}</u>", self.normal_style),
+            ],
+        ]
+        header_table = Table(header_data, colWidths=[4*inch, 3.5*inch])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(header_table)
+        elements.append(Spacer(1, 0.2*inch))
 
-        # Items Table
-        items_data = [["Category", "Size", "Qty", "Weight (kg)", "Rate (₹)", "Total (₹)"]]
+        # ─── Items Section: Each item listed with parcels ─────────────────────
+        items = order_data.get('items', [])
+        grand_total_weight = 0
+        grand_total_parcels = 0
 
-        total_weight = 0
-        total_amount = 0
+        # Style for parcel list
+        parcel_style = ParagraphStyle(
+            'Parcel',
+            parent=self.styles['Normal'],
+            fontSize=10,
+            leftIndent=20,
+            spaceAfter=2,
+        )
+        item_header_style = ParagraphStyle(
+            'ItemHeader',
+            parent=self.styles['Normal'],
+            fontSize=11,
+            fontName='Helvetica-Bold',
+        )
 
-        for item in order_data.get('items', []):
-            # Calculate weights
+        for idx, item in enumerate(items, start=1):
             fulfillment = item.get('fulfillment', [])
             weights = [w for w in fulfillment if w is not None]
             total_item_weight = sum(weights) if weights else 0
+            total_item_parcels = len(weights)
 
             try:
                 rate_val = float(item.get('rate', 0))
-                item_total = total_item_weight * rate_val
             except:
-                item_total = 0
                 rate_val = 0
 
-            total_weight += total_item_weight
-            total_amount += item_total
+            grand_total_weight += total_item_weight
+            grand_total_parcels += total_item_parcels
 
-            items_data.append([
-                item.get('category', 'N/A'),  # Full category name
-                item.get('size', 'N/A'),
-                str(item.get('quantity', 0)),
-                f"{total_item_weight:.2f}",
-                f"{rate_val:.2f}",
-                f"{item_total:.2f}"
-            ])
+            # Item header row: "(N) Print Name Item" on left, boxes on right
+            print_name = item.get('printName', item.get('category', 'N/A'))
+            item_title = Paragraph(
+                f"<b>({idx}) {print_name}</b> — <i>{item.get('category', '')} / {item.get('size', '')}</i>",
+                item_header_style
+            )
 
-        # Add total row
-        items_data.append([
-            "TOTAL", "", "",
-            f"{total_weight:.2f}",
-            "",
-            f"{total_amount:.2f}"
-        ])
+            # Three boxes: Total weight, Total Parcel, Rate
+            boxes_data = [[
+                f"Total Weight\n{total_item_weight:.2f} kg",
+                f"Total Parcel\n{total_item_parcels}",
+                f"Rate\n₹ {rate_val:.2f}",
+            ]]
+            boxes_table = Table(boxes_data, colWidths=[1.15*inch, 1.05*inch, 1*inch])
+            boxes_table.setStyle(TableStyle([
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('BOX', (0, 0), (0, 0), 0.8, colors.black),
+                ('BOX', (1, 0), (1, 0), 0.8, colors.black),
+                ('BOX', (2, 0), (2, 0), 0.8, colors.black),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ]))
 
-        items_table = Table(items_data, colWidths=[2.8*inch, 0.75*inch, 0.55*inch, 1*inch, 0.85*inch, 1*inch])
-        items_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2563EB')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 9),
-            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
-            ('PADDING', (0, 0), (-1, 0), 8),
+            # Combine title and boxes on same row
+            header_row = Table(
+                [[item_title, boxes_table]],
+                colWidths=[4.1*inch, 3.4*inch]
+            )
+            header_row.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ]))
+            elements.append(header_row)
+            elements.append(Spacer(1, 0.08*inch))
 
-            # Data rows
-            ('FONTSIZE', (0, 1), (-1, -2), 9),
-            ('PADDING', (0, 1), (-1, -2), 6),
-            ('ALIGN', (2, 1), (-1, -2), 'RIGHT'),
-            ('VALIGN', (0, 1), (-1, -2), 'MIDDLE'),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#F9FAFB')]),
+            # Parcel list: P1 - weight, P2 - weight, ...
+            if fulfillment:
+                for p_idx, weight in enumerate(fulfillment, start=1):
+                    if weight is not None:
+                        parcel_text = f"P{p_idx} — {weight:.2f} kg"
+                    else:
+                        parcel_text = f"P{p_idx} — —"
+                    elements.append(Paragraph(parcel_text, parcel_style))
+            else:
+                for p_idx in range(1, (item.get('quantity', 0) or 0) + 1):
+                    elements.append(Paragraph(f"P{p_idx} — —", parcel_style))
 
-            # Total row
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#DBEAFE')),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, -1), (-1, -1), 10),
-            ('PADDING', (0, -1), (-1, -1), 8),
-            ('ALIGN', (2, -1), (-1, -1), 'RIGHT'),
+            elements.append(Spacer(1, 0.15*inch))
 
-            # Borders
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5E7EB')),
-        ]))
-
-        elements.append(items_table)
-        elements.append(Spacer(1, 0.15*inch))
-
-        # Summary
-        summary_data = [
-            ["Total Weight", f"{total_weight:.2f} kg", "Total Amount", f"₹ {total_amount:.2f}"],
-            ["Total Parcels", str(order_data.get('totalParcels', 0)), "Created By", order_data.get('createdByName', 'System')],
-        ]
-
-        summary_table = Table(summary_data, colWidths=[2*inch, 2*inch, 2*inch, 2*inch])
-        summary_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F0F9FF')),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('PADDING', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5E7EB')),
+        # ─── Grand Total Boxes: Total Parcel, Total Weight ────────────────────
+        total_boxes_data = [[
+            f"Total Parcel\n{grand_total_parcels}",
+            f"Total Weight\n{grand_total_weight:.2f} kg",
+        ]]
+        total_boxes_table = Table(total_boxes_data, colWidths=[1.5*inch, 1.5*inch])
+        total_boxes_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOX', (0, 0), (0, 0), 1, colors.black),
+            ('BOX', (1, 0), (1, 0), 1, colors.black),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
+        elements.append(Spacer(1, 0.15*inch))
+        elements.append(total_boxes_table)
+        elements.append(Spacer(1, 0.25*inch))
 
-        elements.append(summary_table)
+        # ─── Dispatch Note Section ────────────────────────────────────────────
+        dispatch_label = Table([["Dispatch Note"]], colWidths=[1.5*inch])
+        dispatch_label.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOX', (0, 0), (-1, -1), 1, colors.black),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(dispatch_label)
 
-        # Footer
-        elements.append(Spacer(1, 0.2*inch))
-        footer_text = f"<i>Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Kishore Hosiery</i>"
-        footer = Paragraph(footer_text, ParagraphStyle('footer', parent=self.styles['Normal'], fontSize=8, textColor=colors.grey, alignment=TA_CENTER))
-        elements.append(footer)
+        dispatch_note_text = order_data.get('dispatchNote') or order_data.get('message') or ""
+        dispatch_box = Table(
+            [[Paragraph(dispatch_note_text, self.normal_style)]],
+            colWidths=[7.5*inch],
+            rowHeights=[0.8*inch]
+        )
+        dispatch_box.setStyle(TableStyle([
+            ('BOX', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(dispatch_box)
 
         # Build PDF
         pdf.build(elements)
