@@ -746,10 +746,11 @@ async def split_order(order_id: str, req: Request, user: dict = Depends(get_auth
             updated_items_for_original.append(updated_item)
             total_fulfilled_in_original += fulfilled
 
+    new_original_status = "Ready" if total_fulfilled_in_original > 0 else "Pending"
     original_order_update = {
         "items": updated_items_for_original,
         "totalParcels": total_fulfilled_in_original,
-        "readinessStatus": "Ready" if total_fulfilled_in_original > 0 else "Pending",
+        "readinessStatus": new_original_status,
         "updatedAt": datetime.now(timezone.utc).isoformat()
     }
 
@@ -765,6 +766,30 @@ async def split_order(order_id: str, req: Request, user: dict = Depends(get_auth
         {"godown": godown, "readyParcels": parcels}
         for godown, parcels in godown_dist.items()
     ]
+
+    # If original order is transitioning to Ready and has no PDF yet, generate it
+    old_original_status = order.get('readinessStatus', 'Pending')
+    if (new_original_status == "Ready"
+            and old_original_status != "Ready"
+            and not order.get('billPdfUrl')):
+        try:
+            logging.info(f"🔄 Generating PDF for split original order {order_id} reaching Ready")
+            pdf_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+            custom_filename = f"{order.get('partyName', 'Order')} ({pdf_date})"
+
+            # Build order snapshot with updated items for PDF
+            order_for_pdf = {
+                **order,
+                'items': updated_items_for_original,
+                'totalParcels': total_fulfilled_in_original,
+                'readinessStatus': new_original_status,
+            }
+            pdf_generator = OrderPDFGenerator()
+            pdf_url = pdf_generator.generate_order_bill(order_for_pdf, custom_filename)
+            original_order_update["billPdfUrl"] = pdf_url
+            logging.info(f"✅ PDF generated for split order: {pdf_url}")
+        except Exception as e:
+            logging.error(f"❌ Error generating PDF for split order {order_id}: {str(e)}", exc_info=True)
 
     await db.orders.update_one({"id": order_id}, {"$set": original_order_update})
     updated_original = await db.orders.find_one({"id": order_id}, {"_id": 0})
