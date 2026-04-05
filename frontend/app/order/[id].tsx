@@ -106,6 +106,17 @@ export default function OrderDetailScreen() {
   const [editVariantSelections, setEditVariantSelections] = useState<any[]>([]);
   const [categoryMetas, setCategoryMetas] = useState<Record<string, boolean>>({});
 
+  const calculateTotalWeight = useCallback(() => {
+    if (!order || !order.items) return 0;
+    return order.items.reduce((sum: number, item: any) => {
+      if (item.fulfillment && Array.isArray(item.fulfillment)) {
+        const weights = item.fulfillment.filter(w => w !== null && w !== undefined);
+        return sum + weights.reduce((a: number, b: number) => a + b, 0);
+      }
+      return sum;
+    }, 0);
+  }, [order]);
+
   const fetchOrder = useCallback(async () => {
     try {
       console.log('Fetching order with id:', id, 'type:', typeof id);
@@ -576,10 +587,18 @@ export default function OrderDetailScreen() {
             <View style={styles.section}>
               <Text style={styles.partyName}>{order.partyName}</Text>
               <Text style={styles.locationText}>{order.location}</Text>
-              <View style={[styles.statusBadge, { backgroundColor: (order.readinessStatus === 'Bill Generated' ? '#8B5CF6' : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
-                <Text style={[styles.statusBadgeText, { color: order.readinessStatus === 'Bill Generated' ? '#8B5CF6' : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
-                  {order.readinessStatus === 'Completed' ? 'COMPLETED' : order.readinessStatus === 'Bill Generated' ? 'BILL GENERATED' : order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
-                </Text>
+              <View style={styles.statusRow}>
+                <View style={[styles.statusBadge, { backgroundColor: (order.readinessStatus === 'Bill Generated' ? '#8B5CF6' : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
+                  <Text style={[styles.statusBadgeText, { color: order.readinessStatus === 'Bill Generated' ? '#8B5CF6' : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
+                    {order.readinessStatus === 'Completed' ? 'COMPLETED' : order.readinessStatus === 'Bill Generated' ? 'BILL GENERATED' : order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
+                  </Text>
+                </View>
+                {(order.readinessStatus === 'Ready' || order.readinessStatus === 'Partial Ready' || order.readinessStatus === 'Completed') && (
+                  <View style={styles.totalWeightBadge}>
+                    <Text style={styles.totalWeightLabel}>Total Wt</Text>
+                    <Text style={styles.totalWeightValue}>{calculateTotalWeight().toFixed(2)} kg</Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -1070,7 +1089,11 @@ const styles = StyleSheet.create({
   section: { padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border },
   partyName: { fontSize: FontSize.xxl, fontWeight: '900', color: Colors.text },
   locationText: { fontSize: FontSize.md, color: Colors.textSecondary, marginTop: Spacing.xs },
-  statusBadge: { alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, marginTop: Spacing.sm },
+  statusRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, marginTop: Spacing.sm, flexWrap: 'wrap' },
+  statusBadge: { alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
+  totalWeightBadge: { alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, backgroundColor: Colors.brand + '18', borderWidth: 1, borderColor: Colors.brand + '30' },
+  totalWeightLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.brand, letterSpacing: 0.5 },
+  totalWeightValue: { fontSize: FontSize.md, fontWeight: '700', color: Colors.brand, marginTop: Spacing.xs },
   statusBadgeText: { fontSize: FontSize.md, fontWeight: '700', letterSpacing: 0.5 },
   sectionLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.md },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
