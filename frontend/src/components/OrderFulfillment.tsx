@@ -40,12 +40,18 @@ export function OrderFulfillment({
   totalParcels,
   onUpdate,
   isAdmin = false,
+  readinessStatus = 'Pending',
+  dispatched = false,
+  onSplitPress,
 }: {
   items: OrderItem[];
   orderId: string;
   totalParcels: number;
   onUpdate: (updatedItems: OrderItem[]) => void;
   isAdmin?: boolean;
+  readinessStatus?: string;
+  dispatched?: boolean;
+  onSplitPress?: () => void;
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -343,6 +349,18 @@ export function OrderFulfillment({
             >
               <Ionicons name="play-circle" size={20} color="#FFF" />
               <Text style={styles.startBtnText}>Continue Entry</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Split Order button - visible when partially filled */}
+          {!dispatched && (readinessStatus === 'Partial Ready' || readinessStatus === 'Pending') && onSplitPress && (
+            <TouchableOpacity
+              style={styles.splitBtn}
+              onPress={onSplitPress}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="git-branch" size={18} color="#FFF" />
+              <Text style={styles.splitBtnText}>Split Order</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -710,6 +728,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center', marginTop: 4, minHeight: 40,
   },
   startBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13, numberOfLines: 1 },
+  splitBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.warning, borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 16,
+    justifyContent: 'center', marginTop: 4, minHeight: 40,
+  },
+  splitBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13, numberOfLines: 1 },
 
   // Category
   itemsContainer: { flex: 1 },

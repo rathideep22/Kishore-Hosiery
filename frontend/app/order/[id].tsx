@@ -587,6 +587,9 @@ export default function OrderDetailScreen() {
                   setOrder(prev => prev ? { ...prev, items: updatedItems } : null);
                 }}
                 isAdmin={isAdmin}
+                readinessStatus={order.readinessStatus}
+                dispatched={order.dispatched}
+                onSplitPress={() => setShowSplitModal(true)}
               />
             )}
           </View>
