@@ -861,14 +861,38 @@ async def fulfill_parcel(order_id: str, req: ParcelFulfillmentRequest, user: dic
     elif fulfilled_count > 0:
         new_status = "Partial Ready"
 
+    # Check if order is transitioning to "Ready" status
+    old_status = order.get('readinessStatus', 'Pending')
+    is_becoming_ready = old_status != "Ready" and new_status == "Ready"
+
+    # If becoming ready and no PDF yet, generate PDF with custom filename
+    update_dict = {
+        "items": updated_items,
+        "readinessStatus": new_status,
+        "updatedAt": datetime.now(timezone.utc).isoformat()
+    }
+
+    if is_becoming_ready and not order.get('billPdfUrl'):
+        try:
+            logging.info(f"🔄 Generating PDF for order {order_id} reaching Ready status")
+            # Format: "Party name (date)" e.g., "Acme Corp (2026-04-05)"
+            pdf_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+            custom_filename = f"{order.get('partyName', 'Order')} ({pdf_date})"
+
+            # Create order data with updated items for PDF generation
+            order_for_pdf = {**order, 'items': updated_items}
+            pdf_generator = OrderPDFGenerator()
+            pdf_url = pdf_generator.generate_order_bill(order_for_pdf, custom_filename)
+            update_dict["billPdfUrl"] = pdf_url
+            logging.info(f"✅ PDF generated successfully for order: {pdf_url}")
+        except Exception as e:
+            logging.error(f"❌ Error generating PDF for order {order_id}: {str(e)}", exc_info=True)
+            # Continue with order update even if PDF generation fails
+
     # Update order with new items and status using the _id we found
     await db.orders.update_one(
         {"_id": order["_id"]},
-        {"$set": {
-            "items": updated_items,
-            "readinessStatus": new_status,
-            "updatedAt": datetime.now(timezone.utc).isoformat()
-        }}
+        {"$set": update_dict}
     )
 
     # Re-fetch for return and broadcast

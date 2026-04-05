@@ -51,8 +51,13 @@ class OrderPDFGenerator:
             alignment=TA_LEFT
         )
 
-    def generate_order_bill(self, order_data: dict) -> str:
-        """Generate professional PDF bill for order and upload to S3"""
+    def generate_order_bill(self, order_data: dict, custom_filename: str = None) -> str:
+        """Generate professional PDF bill for order and upload to S3
+
+        Args:
+            order_data: Order document data
+            custom_filename: Optional custom filename (without extension) e.g., "Party Name (2026-04-05)"
+        """
         # Create PDF in memory
         pdf_buffer = io.BytesIO()
         pdf = SimpleDocTemplate(
@@ -195,8 +200,13 @@ class OrderPDFGenerator:
         # Get PDF content
         pdf_content = pdf_buffer.getvalue()
 
-        # Upload to S3
-        pdf_key = f"bills/{order_data.get('orderId', 'order')}_bill_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        # Generate PDF key with custom filename or default
+        if custom_filename:
+            # Use custom filename format: "Party name (date).pdf"
+            pdf_key = f"bills/{custom_filename}.pdf"
+        else:
+            # Use default format with timestamp
+            pdf_key = f"bills/{order_data.get('orderId', 'order')}_bill_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
 
         self.s3_client.put_object(
             Bucket=self.bucket_name,
