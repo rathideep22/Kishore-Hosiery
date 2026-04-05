@@ -357,11 +357,6 @@ class OrderPDFGenerator:
             total_item_weight = sum(weights) if weights else 0
             total_item_parcels = len(weights)
 
-            try:
-                rate_val = float(item.get('rate') or 0)
-            except:
-                rate_val = 0
-
             grand_total_weight += total_item_weight
             grand_total_parcels += total_item_parcels
 
@@ -450,8 +445,8 @@ class OrderPDFGenerator:
             else:
                 parcel_grid = Spacer(1, 1)
 
-            # Item summary strip (bottom of item card)
-            amount = total_item_weight * rate_val
+            # Item summary strip (bottom of item card) — 2 columns: Weight / Parcels
+            summary_col_w = (CONTENT_WIDTH - 2*SIDE_MARGIN) / 2
             summary_row = [[
                 Paragraph(
                     f'<font color="#64748B" size="8">TOTAL WEIGHT</font><br/><b><font size="11" color="#0F172A">{total_item_weight:.2f} kg</font></b>',
@@ -461,19 +456,10 @@ class OrderPDFGenerator:
                     f'<font color="#64748B" size="8">TOTAL PARCELS</font><br/><b><font size="11" color="#0F172A">{total_item_parcels}</font></b>',
                     ParagraphStyle('s2', parent=self.styles['Normal'], alignment=TA_CENTER, leading=13)
                 ),
-                Paragraph(
-                    f'<font color="#64748B" size="8">RATE / KG</font><br/><b><font size="11" color="#0F172A">Rs. {rate_val:,.2f}</font></b>',
-                    ParagraphStyle('s3', parent=self.styles['Normal'], alignment=TA_CENTER, leading=13)
-                ),
-                Paragraph(
-                    f'<font color="#FEF3C7" size="8">AMOUNT</font><br/><b><font size="12" color="#FFFFFF">Rs. {amount:,.2f}</font></b>',
-                    ParagraphStyle('s4', parent=self.styles['Normal'], alignment=TA_CENTER, leading=14)
-                ),
             ]]
-            summary_table = Table(summary_row, colWidths=[col_w]*4)
+            summary_table = Table(summary_row, colWidths=[summary_col_w]*2)
             summary_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (2, -1), SUBTLE_BG),
-                ('BACKGROUND', (3, 0), (3, -1), BRAND_ACCENT),
+                ('BACKGROUND', (0, 0), (-1, -1), SUBTLE_BG),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('TOPPADDING', (0, 0), (-1, -1), 10),
@@ -501,17 +487,7 @@ class OrderPDFGenerator:
             elements.append(KeepTogether(item_wrapper))
             elements.append(Spacer(1, 0.2*inch))
 
-        # ═══ 4. GRAND TOTAL BAR ═══════════════════════════════════════════════
-        grand_amount = 0
-        for item in items:
-            fulfillment = item.get('fulfillment') or []
-            weights = [w for w in fulfillment if w is not None]
-            try:
-                rv = float(item.get('rate') or 0)
-            except:
-                rv = 0
-            grand_amount += sum(weights) * rv
-
+        # ═══ 4. TOTAL BAR (Total Parcels | Total Weight) ═════════════════════
         grand_total_row = [[
             Paragraph(
                 '<font color="#CBD5E1" size="9">TOTAL PARCELS</font><br/><b><font size="16" color="#FFFFFF">' + str(grand_total_parcels) + '</font></b>',
@@ -521,16 +497,11 @@ class OrderPDFGenerator:
                 f'<font color="#CBD5E1" size="9">TOTAL WEIGHT</font><br/><b><font size="16" color="#FFFFFF">{grand_total_weight:.2f} kg</font></b>',
                 ParagraphStyle('g2', parent=self.styles['Normal'], alignment=TA_CENTER, leading=18)
             ),
-            Paragraph(
-                f'<font color="#FEF3C7" size="9">GRAND TOTAL</font><br/><b><font size="16" color="#FFFFFF">Rs. {grand_amount:,.2f}</font></b>',
-                ParagraphStyle('g3', parent=self.styles['Normal'], alignment=TA_CENTER, leading=18)
-            ),
         ]]
         inner_w = CONTENT_WIDTH - 2*SIDE_MARGIN
-        grand_table = Table(grand_total_row, colWidths=[inner_w/3]*3)
+        grand_table = Table(grand_total_row, colWidths=[inner_w/2]*2)
         grand_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (1, -1), BRAND_DARK),
-            ('BACKGROUND', (2, 0), (2, -1), BRAND_ACCENT),
+            ('BACKGROUND', (0, 0), (-1, -1), BRAND_DARK),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('TOPPADDING', (0, 0), (-1, -1), 16),
