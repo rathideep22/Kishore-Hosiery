@@ -1331,7 +1331,7 @@ const styles = StyleSheet.create({
   downloadPdfBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
   downloadPdfBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
   // Split Order Button
-  splitBtn: { flexDirection: 'row', backgroundColor: Colors.warning, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
+  splitBtn: { flexDirection: 'row', backgroundColor: '#000', borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
   splitBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
   // Split Modal
   godownOptions: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.xl },

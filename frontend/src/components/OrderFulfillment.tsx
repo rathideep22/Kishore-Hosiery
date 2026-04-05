@@ -351,18 +351,6 @@ export function OrderFulfillment({
               <Text style={styles.startBtnText}>Continue Entry</Text>
             </TouchableOpacity>
           )}
-
-          {/* Split Order button - visible when partially filled */}
-          {!dispatched && (readinessStatus === 'Partial Ready' || readinessStatus === 'Pending') && onSplitPress && (
-            <TouchableOpacity
-              style={styles.splitBtn}
-              onPress={onSplitPress}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="git-branch" size={18} color="#FFF" />
-              <Text style={styles.splitBtnText}>Split Order</Text>
-            </TouchableOpacity>
-          )}
         </View>
         {Object.entries(groupedByCategory).map(([category, catItems]) => {
           const isExpanded = expandedCategories[category] !== false;
@@ -475,6 +463,14 @@ export function OrderFulfillment({
           <TouchableOpacity style={styles.doneBtn} onPress={() => router.back()} activeOpacity={0.85}>
             <Text style={styles.doneBtnText}>Done</Text>
           </TouchableOpacity>
+
+          {/* Split Order button - below Done, visible when partially filled */}
+          {!dispatched && (readinessStatus === 'Partial Ready' || readinessStatus === 'Pending') && onSplitPress && (
+            <TouchableOpacity style={styles.splitBtn} onPress={onSplitPress} activeOpacity={0.85}>
+              <Ionicons name="git-branch" size={18} color="#FFF" />
+              <Text style={styles.splitBtnText}>Split Order</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={{ height: Math.max(280, insets.bottom + 100) }} />
@@ -730,9 +726,9 @@ const styles = StyleSheet.create({
   startBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13, numberOfLines: 1 },
   splitBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.warning, borderRadius: 10,
+    backgroundColor: '#000', borderRadius: 10,
     paddingVertical: 10, paddingHorizontal: 16,
-    justifyContent: 'center', marginTop: 4, minHeight: 40,
+    justifyContent: 'center', marginTop: 8, minHeight: 40,
   },
   splitBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13, numberOfLines: 1 },
 
