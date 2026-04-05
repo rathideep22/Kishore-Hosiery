@@ -74,7 +74,7 @@ export function OrderFulfillment({
   const serialInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const panelAnim = useRef(new Animated.Value(0)).current;
-  const autoAdvanceTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const autoAdvanceTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // Show/hide entry panel when activeSlot changes
   useEffect(() => {
@@ -229,15 +229,12 @@ export function OrderFulfillment({
       if (cleaned) {
         debounceTimersRef.current[key] = setTimeout(() => {
           submitFulfillment(productId, parcelIndex, null, cleaned);
-          // Auto-advance to weight: immediately on enter, or after delay if enabled
           if (enableAutoAdvance) {
             if (autoAdvanceTimersRef.current[key]) clearTimeout(autoAdvanceTimersRef.current[key]);
             autoAdvanceTimersRef.current[key] = setTimeout(() => {
               weightInputRef.current?.focus();
               delete autoAdvanceTimersRef.current[key];
             }, autoAdvanceDelay);
-          } else {
-            setTimeout(() => weightInputRef.current?.focus(), 100);
           }
           delete debounceTimersRef.current[key];
         }, DEBOUNCE_DELAY);
@@ -720,7 +717,7 @@ const styles = StyleSheet.create({
   headerProgressSlash: { fontSize: 20, fontWeight: '400', color: Colors.textSecondary },
   headerProgressLabel: { fontSize: 12, color: Colors.textSecondary, marginLeft: 2 },
   progressBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 16, borderWidth: 1 },
-  progressBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5, numberOfLines: 1 },
+  progressBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   progressTrack: { height: 6, backgroundColor: Colors.border, borderRadius: 3, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 3 },
   startBtn: {
@@ -729,14 +726,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10, paddingHorizontal: 16,
     justifyContent: 'center', marginTop: 4, minHeight: 40,
   },
-  startBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13, numberOfLines: 1 },
+  startBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13 },
   splitBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: '#000', borderRadius: 10,
     paddingVertical: 6, paddingHorizontal: 12,
     justifyContent: 'center', marginTop: 8, minHeight: 32,
   },
-  splitBtnText: { color: '#FFF', fontWeight: '700', fontSize: 11, numberOfLines: 1 },
+  splitBtnText: { color: '#FFF', fontWeight: '700', fontSize: 11 },
 
   // Category
   itemsContainer: { flex: 1 },
@@ -747,10 +744,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm, paddingVertical: Spacing.md,
     borderWidth: 1, borderColor: Colors.border,
   },
-  categoryName: { fontSize: 11, fontWeight: '700', color: Colors.text, flex: 1, numberOfLines: 1, marginRight: Spacing.xs },
-  categoryMeta: { fontSize: 9, color: Colors.textSecondary, marginTop: 2, numberOfLines: 1 },
+  categoryName: { fontSize: 11, fontWeight: '700', color: Colors.text, flex: 1, marginRight: Spacing.xs },
+  categoryMeta: { fontSize: 9, color: Colors.textSecondary, marginTop: 2 },
   catBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 16, marginRight: 3 },
-  catBadgeText: { fontSize: 10, fontWeight: '800', numberOfLines: 1 },
+  catBadgeText: { fontSize: 10, fontWeight: '800' },
 
   // Variant row
   variantRow: {
@@ -761,9 +758,9 @@ const styles = StyleSheet.create({
   },
   variantRowActive: { borderColor: Colors.brand, borderWidth: 2, backgroundColor: Colors.brand + '08' },
   variantLeft: { flex: 1, minWidth: 0 },
-  variantSize: { fontSize: 13, fontWeight: '800', color: Colors.text, numberOfLines: 1 },
+  variantSize: { fontSize: 13, fontWeight: '800', color: Colors.text },
   snBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.brand + '18', borderRadius: 3, paddingHorizontal: 3, paddingVertical: 1, gap: 1 },
-  snBadgeText: { fontSize: 8, fontWeight: '700', color: Colors.brand, numberOfLines: 1 },
+  snBadgeText: { fontSize: 8, fontWeight: '700', color: Colors.brand },
 
   // Parcel dots
   parcelDots: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
@@ -794,9 +791,9 @@ const styles = StyleSheet.create({
   },
   summaryTitle: { fontSize: 10, fontWeight: '800', color: Colors.textSecondary, letterSpacing: 1.5, marginBottom: 10 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, gap: Spacing.xs },
-  summaryCategory: { fontSize: 12, fontWeight: '600', color: Colors.text, flex: 1, numberOfLines: 1 },
+  summaryCategory: { fontSize: 12, fontWeight: '600', color: Colors.text, flex: 1 },
   summaryBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 16, borderWidth: 1 },
-  summaryValue: { fontSize: 12, fontWeight: '700', numberOfLines: 1 },
+  summaryValue: { fontSize: 12, fontWeight: '700' },
   summaryDetails: { flexDirection: 'row', gap: Spacing.md, marginBottom: 8, marginLeft: 0, paddingLeft: Spacing.xs },
   summaryRate: { fontSize: 11, fontWeight: '600', color: Colors.brand, backgroundColor: Colors.brand + '15', paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: 4 },
   summaryWeight: { fontSize: 11, fontWeight: '600', color: Colors.success, backgroundColor: Colors.success + '15', paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: 4 },
@@ -804,7 +801,7 @@ const styles = StyleSheet.create({
     marginTop: 12, backgroundColor: Colors.brand, borderRadius: 12,
     paddingVertical: 12, alignItems: 'center', minHeight: 44,
   },
-  doneBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14, numberOfLines: 1 },
+  doneBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
 
   // ── Bottom Entry Panel ──
   entryPanel: {
@@ -824,10 +821,10 @@ const styles = StyleSheet.create({
   },
   panelScrollable: { maxHeight: 320, paddingHorizontal: 0 },
   panelHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, flex: 1, paddingHorizontal: Spacing.lg },
-  panelVariant: { fontSize: 18, fontWeight: '800', color: Colors.text, flex: 1, numberOfLines: 1 },
+  panelVariant: { fontSize: 18, fontWeight: '800', color: Colors.text, flex: 1 },
   panelHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: 1, justifyContent: 'space-between' },
-  panelParcelLabel: { fontSize: 12, color: Colors.textSecondary, numberOfLines: 1 },
-  panelRateText: { fontSize: 12, fontWeight: '700', color: Colors.brand, backgroundColor: Colors.brand + '15', paddingHorizontal: Spacing.xs, paddingVertical: 2, borderRadius: 4, numberOfLines: 1 },
+  panelParcelLabel: { fontSize: 12, color: Colors.textSecondary },
+  panelRateText: { fontSize: 12, fontWeight: '700', color: Colors.brand, backgroundColor: Colors.brand + '15', paddingHorizontal: Spacing.xs, paddingVertical: 2, borderRadius: 4 },
   panelClose: { padding: 4 },
   savingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, paddingHorizontal: Spacing.lg },
   savingText: { fontSize: 13, color: Colors.textSecondary },
@@ -837,7 +834,7 @@ const styles = StyleSheet.create({
   previousParcelRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingVertical: 4, paddingHorizontal: 4, backgroundColor: Colors.surface, borderRadius: 6, marginBottom: 4, borderWidth: 1, borderColor: Colors.border + '40' },
   previousParcelNum: { fontSize: 9, fontWeight: '800', color: Colors.brand, minWidth: 24, textAlign: 'center' },
   previousParcelDetails: { flex: 1 },
-  previousParcelText: { fontSize: 9, fontWeight: '600', color: Colors.text, numberOfLines: 1 },
+  previousParcelText: { fontSize: 9, fontWeight: '600', color: Colors.text },
   previousParcelPlaceholder: { fontSize: 9, color: Colors.textSecondary, fontStyle: 'italic' },
   settingsRowPanel: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, backgroundColor: Colors.brand + '08', marginHorizontal: Spacing.lg, paddingHorizontal: Spacing.md, marginBottom: 12, borderRadius: 8 },
   settingsRowPanelNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 8, paddingHorizontal: Spacing.md, paddingVertical: 8, marginHorizontal: Spacing.lg, marginBottom: 10 },
@@ -854,7 +851,7 @@ const styles = StyleSheet.create({
   // Inputs
   inputGroup: { marginBottom: 10, paddingHorizontal: Spacing.lg },
   inputLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
-  inputLabel: { fontSize: 12, fontWeight: '700', color: Colors.text, numberOfLines: 1 },
+  inputLabel: { fontSize: 12, fontWeight: '700', color: Colors.text },
   bigInput: {
     width: '100%', height: 50, borderRadius: 12,
     borderWidth: 2, borderColor: Colors.border,
@@ -881,10 +878,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12, borderRadius: 10,
     backgroundColor: Colors.bgSecondary, borderWidth: 1, borderColor: Colors.border,
   },
-  navBtnText: { fontSize: 12, fontWeight: '600', color: Colors.text, numberOfLines: 1 },
+  navBtnText: { fontSize: 12, fontWeight: '600', color: Colors.text },
   saveBtn: {
     flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: Colors.success, borderRadius: 10, paddingVertical: 14, minHeight: 44,
   },
-  saveBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14, numberOfLines: 1 },
+  saveBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
 });

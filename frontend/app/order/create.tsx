@@ -53,7 +53,7 @@ interface Gowdown {
 export default function CreateOrderScreen() {
   const router = useRouter();
   const rateInputRefs = useRef<Record<string, any>>({});
-  const autoAdvanceTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  const autoAdvanceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const { width } = useWindowDimensions();
   const isNarrow = width < 420;
 
