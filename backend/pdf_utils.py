@@ -225,59 +225,60 @@ class OrderPDFGenerator:
         # ═══ 2. INFO CARDS (Bill To | Invoice Details) ═══════════════════════
         order_date = order_data.get('createdAt', datetime.now().isoformat())[:10]
 
-        def info_cell(label, value):
-            return [
-                Paragraph(label.upper(), self.section_label),
-                Spacer(1, 2),
-                Paragraph(str(value) if value else "—", self.info_value),
-            ]
+        info_pair_style = ParagraphStyle(
+            'InfoPair', parent=self.styles['Normal'],
+            fontSize=10, textColor=TEXT_DARK, alignment=TA_LEFT, leading=13,
+            fontName='Helvetica',
+        )
 
-        # Left card: Bill To
+        def info_pair(label, value):
+            """Build a single Paragraph with small label above bold value."""
+            value_str = str(value) if value else "—"
+            # Escape angle brackets for safety
+            value_str = value_str.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            text = (
+                f'<font size="7" color="#64748B"><b>{label.upper()}</b></font><br/>'
+                f'<font size="10" color="#0F172A"><b>{value_str}</b></font>'
+            )
+            return Paragraph(text, info_pair_style)
+
+        card_header_style = ParagraphStyle(
+            'CardHeader', parent=self.styles['Normal'],
+            fontSize=9, textColor=WHITE, fontName='Helvetica-Bold',
+            alignment=TA_LEFT, leading=11
+        )
+
+        # Left card: Bill To (stacked rows, single column)
         bill_to_data = [
-            [Paragraph("BILL TO", ParagraphStyle(
-                'CardHeader', parent=self.styles['Normal'],
-                fontSize=9, textColor=WHITE, fontName='Helvetica-Bold',
-                alignment=TA_LEFT, leading=11
-            ))],
-            [Table([
-                info_cell("Party Name", order_data.get('partyName', 'N/A')),
-                [Spacer(1, 6)],
-                info_cell("Location", order_data.get('location', 'N/A')),
-                [Spacer(1, 6)],
-                info_cell("Godown", order_data.get('godown', 'N/A')),
-            ], colWidths=[3.2*inch])],
+            [Paragraph("BILL TO", card_header_style)],
+            [info_pair("Party Name", order_data.get('partyName', 'N/A'))],
+            [info_pair("Location", order_data.get('location', 'N/A'))],
+            [info_pair("Godown", order_data.get('godown', 'N/A'))],
         ]
         bill_to_card = Table(bill_to_data, colWidths=[3.4*inch])
         bill_to_card.setStyle(TableStyle([
-            # Header row
+            # Header row (row 0)
             ('BACKGROUND', (0, 0), (-1, 0), BRAND_PRIMARY),
             ('LEFTPADDING', (0, 0), (-1, 0), 12),
             ('RIGHTPADDING', (0, 0), (-1, 0), 12),
             ('TOPPADDING', (0, 0), (-1, 0), 8),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-            # Body row
-            ('BACKGROUND', (0, 1), (-1, 1), LIGHT_BG),
-            ('LEFTPADDING', (0, 1), (-1, 1), 12),
-            ('RIGHTPADDING', (0, 1), (-1, 1), 12),
-            ('TOPPADDING', (0, 1), (-1, 1), 10),
-            ('BOTTOMPADDING', (0, 1), (-1, 1), 10),
+            # Body rows (rows 1+)
+            ('BACKGROUND', (0, 1), (-1, -1), LIGHT_BG),
+            ('LEFTPADDING', (0, 1), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 1), (-1, -1), 12),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
             ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
 
         # Right card: Invoice Details
         invoice_details_data = [
-            [Paragraph("INVOICE DETAILS", ParagraphStyle(
-                'CardHeader', parent=self.styles['Normal'],
-                fontSize=9, textColor=WHITE, fontName='Helvetica-Bold',
-                alignment=TA_LEFT, leading=11
-            ))],
-            [Table([
-                info_cell("Order No", order_id),
-                [Spacer(1, 6)],
-                info_cell("Date", order_date),
-                [Spacer(1, 6)],
-                info_cell("Bill No", order_data.get('billNo') or "—"),
-            ], colWidths=[3.2*inch])],
+            [Paragraph("INVOICE DETAILS", card_header_style)],
+            [info_pair("Order No", order_id)],
+            [info_pair("Date", order_date)],
+            [info_pair("Bill No", order_data.get('billNo') or "—")],
         ]
         invoice_details_card = Table(invoice_details_data, colWidths=[3.4*inch])
         invoice_details_card.setStyle(TableStyle([
@@ -286,12 +287,13 @@ class OrderPDFGenerator:
             ('RIGHTPADDING', (0, 0), (-1, 0), 12),
             ('TOPPADDING', (0, 0), (-1, 0), 8),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-            ('BACKGROUND', (0, 1), (-1, 1), LIGHT_BG),
-            ('LEFTPADDING', (0, 1), (-1, 1), 12),
-            ('RIGHTPADDING', (0, 1), (-1, 1), 12),
-            ('TOPPADDING', (0, 1), (-1, 1), 10),
-            ('BOTTOMPADDING', (0, 1), (-1, 1), 10),
+            ('BACKGROUND', (0, 1), (-1, -1), LIGHT_BG),
+            ('LEFTPADDING', (0, 1), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 1), (-1, -1), 12),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
             ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
 
         cards_row = Table(
