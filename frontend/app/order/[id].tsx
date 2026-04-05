@@ -610,18 +610,6 @@ export default function OrderDetailScreen() {
               </View>
             </View>
 
-            {/* Split Order - visible to all (staff, admin, accountant) when partially filled */}
-            {!order.dispatched && (order.readinessStatus === 'Partial Ready' || order.readinessStatus === 'Pending') && (
-              <TouchableOpacity
-                style={styles.splitBtn}
-                onPress={() => setShowSplitModal(true)}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="git-branch" size={20} color="#FFF" />
-                <Text style={styles.splitBtnText}>📌 Split Order</Text>
-              </TouchableOpacity>
-            )}
-
             {/* Download PDF - show if bill exists */}
             {order.billPdfUrl && (
               <TouchableOpacity
@@ -778,6 +766,18 @@ export default function OrderDetailScreen() {
             </View>
           )}
 
+
+          {/* Split Order - show at bottom when partially filled */}
+          {!order.dispatched && (order.readinessStatus === 'Partial Ready' || order.readinessStatus === 'Pending') && (
+            <TouchableOpacity
+              style={styles.splitBtn}
+              onPress={() => setShowSplitModal(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="git-branch" size={20} color="#FFF" />
+              <Text style={styles.splitBtnText}>Split Order</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Meta */}
             <View style={styles.meta}>
