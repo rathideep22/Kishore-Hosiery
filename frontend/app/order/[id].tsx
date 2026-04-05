@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert,
-  ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform, Modal, FlatList, useWindowDimensions, Switch
+  ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform, Modal, FlatList, useWindowDimensions, Switch, Linking
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -737,11 +737,14 @@ export default function OrderDetailScreen() {
               <TouchableOpacity
                 style={styles.downloadPdfBtn}
                 onPress={() => {
-                  // Open PDF in browser/default app
-                  const url = order.billPdfUrl;
-                  Platform.OS === 'web'
-                    ? window.open(url, '_blank')
-                    : alert(`PDF URL: ${url}\n\nTap to copy and open in your browser`);
+                  const url = order.billPdfUrl!;
+                  if (Platform.OS === 'web') {
+                    window.open(url, '_blank');
+                  } else {
+                    Linking.openURL(url).catch(() => {
+                      Alert.alert('Error', `Could not open PDF. URL: ${url}`);
+                    });
+                  }
                 }}
                 activeOpacity={0.7}
               >
