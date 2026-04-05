@@ -593,7 +593,7 @@ export default function OrderDetailScreen() {
                     {order.readinessStatus === 'Completed' ? 'COMPLETED' : order.readinessStatus === 'Bill Generated' ? 'BILL GENERATED' : order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
                   </Text>
                 </View>
-                {(order.readinessStatus === 'Ready' || order.readinessStatus === 'Partial Ready' || order.readinessStatus === 'Dispatched' || order.readinessStatus === 'Bill Generated' || order.readinessStatus === 'Completed') && (
+                {order.items && order.items.length > 0 && (
                   <View style={styles.totalWeightBadge}>
                     <Text style={styles.totalWeightLabel}>Total Wt</Text>
                     <Text style={styles.totalWeightValue}>{calculateTotalWeight().toFixed(2)} kg</Text>
@@ -1091,9 +1091,9 @@ const styles = StyleSheet.create({
   locationText: { fontSize: FontSize.md, color: Colors.textSecondary, marginTop: Spacing.xs },
   statusRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, marginTop: Spacing.sm, flexWrap: 'wrap' },
   statusBadge: { alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
-  totalWeightBadge: { alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, backgroundColor: Colors.brand + '18', borderWidth: 1, borderColor: Colors.brand + '30' },
-  totalWeightLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.brand, letterSpacing: 0.5 },
-  totalWeightValue: { fontSize: FontSize.md, fontWeight: '700', color: Colors.brand, marginTop: Spacing.xs },
+  totalWeightBadge: { alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, backgroundColor: Colors.success + '15', borderWidth: 1.5, borderColor: Colors.success + '40' },
+  totalWeightLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.success, letterSpacing: 0.5 },
+  totalWeightValue: { fontSize: FontSize.md, fontWeight: '700', color: Colors.success, marginTop: Spacing.xs },
   statusBadgeText: { fontSize: FontSize.md, fontWeight: '700', letterSpacing: 0.5 },
   sectionLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.md },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
