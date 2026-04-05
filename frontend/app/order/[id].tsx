@@ -730,6 +730,26 @@ export default function OrderDetailScreen() {
             </View>
           )}
 
+          {/* Download PDF - show for completed orders */}
+          {order.completed && order.billPdfUrl && (
+            <View style={styles.section}>
+              <TouchableOpacity
+                style={styles.downloadPdfBtn}
+                onPress={() => {
+                  // Open PDF in browser/default app
+                  const url = order.billPdfUrl;
+                  Platform.OS === 'web'
+                    ? window.open(url, '_blank')
+                    : alert(`PDF URL: ${url}\n\nTap to copy and open in your browser`);
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="document-text" size={22} color="#FFF" />
+                <Text style={styles.downloadPdfBtnText}>Download Bill PDF</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Meta */}
             <View style={styles.meta}>
               <Text style={styles.metaText}>Created by {order.createdByName}</Text>

@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import jwt
 import asyncio
+from pdf_utils import OrderPDFGenerator
 
 ROOT_DIR = Path(__file__).parent
 env_path = ROOT_DIR / '.env'
@@ -467,17 +468,49 @@ async def complete_order(order_id: str, user: dict = Depends(get_auth_user)):
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+
+    # Generate PDF and upload to S3
+    pdf_url = None
+    try:
+        pdf_generator = OrderPDFGenerator(bucket_name="bills-kishore")
+        pdf_url = pdf_generator.generate_order_bill(order)
+    except Exception as e:
+        logging.error(f"Error generating PDF for order {order_id}: {str(e)}")
+        # Continue with order completion even if PDF generation fails
+
     update = {
         "completed": True,
         "readinessStatus": "Completed",
         "completedAt": datetime.now(timezone.utc).isoformat(),
         "updatedAt": datetime.now(timezone.utc).isoformat()
     }
+
+    # Add PDF URL if generation was successful
+    if pdf_url:
+        update["billPdfUrl"] = pdf_url
+
     await db.orders.update_one({"id": order_id}, {"$set": update})
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
     await create_audit_log(user['id'], "ORDER_COMPLETED", order_id, f"Completed order {order['orderId']}")
     await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
     return updated
+
+
+@api_router.get("/orders/{order_id}/bill-pdf-url")
+async def get_bill_pdf_url(order_id: str, user: dict = Depends(get_auth_user)):
+    """Get the PDF bill URL for a completed order"""
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if not order.get("billPdfUrl"):
+        raise HTTPException(status_code=404, detail="PDF not available for this order")
+
+    return {
+        "orderId": order.get("orderId"),
+        "billPdfUrl": order.get("billPdfUrl"),
+        "fileName": f"{order.get('orderId')}_bill.pdf"
+    }
 
 
 @api_router.delete("/orders/{order_id}")
