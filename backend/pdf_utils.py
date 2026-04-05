@@ -7,8 +7,23 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, KeepTogether
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+
+# ─── Brand Color Palette ──────────────────────────────────────────────────────
+BRAND_DARK = colors.HexColor('#0F172A')       # slate-900 - headers
+BRAND_PRIMARY = colors.HexColor('#1E3A8A')    # blue-900 - primary accent
+BRAND_ACCENT = colors.HexColor('#D97706')     # amber-600 - totals highlight
+BRAND_ACCENT_LIGHT = colors.HexColor('#FEF3C7')  # amber-100
+LIGHT_BG = colors.HexColor('#F8FAFC')         # slate-50
+SUBTLE_BG = colors.HexColor('#F1F5F9')        # slate-100
+ROW_ALT = colors.HexColor('#EFF6FF')          # blue-50
+BORDER = colors.HexColor('#E2E8F0')           # slate-200
+BORDER_STRONG = colors.HexColor('#CBD5E1')    # slate-300
+TEXT_MUTED = colors.HexColor('#64748B')       # slate-500
+TEXT_DARK = colors.HexColor('#0F172A')        # slate-900
+WHITE = colors.HexColor('#FFFFFF')
 
 
 class OrderPDFGenerator:
@@ -35,20 +50,103 @@ class OrderPDFGenerator:
 
     def _setup_styles(self):
         """Setup custom paragraph styles"""
-        self.title_style = ParagraphStyle(
-            'CustomTitle',
+        self.brand_title = ParagraphStyle(
+            'BrandTitle',
             parent=self.styles['Heading1'],
             fontSize=24,
-            textColor=colors.HexColor('#2563EB'),
-            spaceAfter=12,
+            textColor=WHITE,
+            fontName='Helvetica-Bold',
+            alignment=TA_LEFT,
+            leading=26,
+        )
+        self.brand_tagline = ParagraphStyle(
+            'BrandTagline',
+            parent=self.styles['Normal'],
+            fontSize=9,
+            textColor=colors.HexColor('#CBD5E1'),
+            fontName='Helvetica',
+            alignment=TA_LEFT,
+            leading=11,
+        )
+        self.invoice_label = ParagraphStyle(
+            'InvoiceLabel',
+            parent=self.styles['Normal'],
+            fontSize=18,
+            textColor=BRAND_ACCENT,
+            fontName='Helvetica-Bold',
+            alignment=TA_RIGHT,
+            leading=20,
+        )
+        self.invoice_sub = ParagraphStyle(
+            'InvoiceSub',
+            parent=self.styles['Normal'],
+            fontSize=9,
+            textColor=colors.HexColor('#CBD5E1'),
+            fontName='Helvetica',
+            alignment=TA_RIGHT,
+            leading=11,
+        )
+        self.section_label = ParagraphStyle(
+            'SectionLabel',
+            parent=self.styles['Normal'],
+            fontSize=8,
+            textColor=TEXT_MUTED,
+            fontName='Helvetica-Bold',
+            alignment=TA_LEFT,
+            leading=10,
+        )
+        self.info_label = ParagraphStyle(
+            'InfoLabel',
+            parent=self.styles['Normal'],
+            fontSize=8,
+            textColor=TEXT_MUTED,
+            fontName='Helvetica',
+            alignment=TA_LEFT,
+            leading=10,
+        )
+        self.info_value = ParagraphStyle(
+            'InfoValue',
+            parent=self.styles['Normal'],
+            fontSize=10,
+            textColor=TEXT_DARK,
+            fontName='Helvetica-Bold',
+            alignment=TA_LEFT,
+            leading=12,
+        )
+        self.item_title_style = ParagraphStyle(
+            'ItemTitle',
+            parent=self.styles['Normal'],
+            fontSize=11,
+            textColor=WHITE,
+            fontName='Helvetica-Bold',
+            alignment=TA_LEFT,
+            leading=13,
+        )
+        self.parcel_style = ParagraphStyle(
+            'ParcelStyle',
+            parent=self.styles['Normal'],
+            fontSize=9,
+            textColor=TEXT_DARK,
+            fontName='Helvetica',
             alignment=TA_CENTER,
-            fontName='Helvetica-Bold'
+            leading=11,
         )
         self.normal_style = ParagraphStyle(
             'Normal',
             parent=self.styles['Normal'],
             fontSize=10,
-            alignment=TA_LEFT
+            textColor=TEXT_DARK,
+            alignment=TA_LEFT,
+            leading=12,
+        )
+        self.footer_style = ParagraphStyle(
+            'Footer',
+            parent=self.styles['Normal'],
+            fontSize=8,
+            textColor=TEXT_MUTED,
+            fontName='Helvetica-Oblique',
+            alignment=TA_CENTER,
+            leading=10,
         )
 
     def generate_order_bill(self, order_data: dict, custom_filename: str = None) -> str:
@@ -58,198 +156,445 @@ class OrderPDFGenerator:
             order_data: Order document data
             custom_filename: Optional custom filename (without extension) e.g., "Party Name (2026-04-05)"
         """
-        # Create PDF in memory
+        # Create PDF in memory - zero margins, we'll handle spacing inside
         pdf_buffer = io.BytesIO()
         pdf = SimpleDocTemplate(
             pdf_buffer,
             pagesize=A4,
-            rightMargin=0.5*inch,
-            leftMargin=0.5*inch,
-            topMargin=0.5*inch,
-            bottomMargin=0.5*inch
+            rightMargin=0,
+            leftMargin=0,
+            topMargin=0,
+            bottomMargin=0
         )
 
-        # Build PDF content
+        # A4 is 8.27" wide. Content width = 7.27" with 0.5" margins
+        PAGE_WIDTH = 8.27 * inch
+        CONTENT_WIDTH = 7.27 * inch
+        SIDE_MARGIN = 0.5 * inch
+
         elements = []
 
-        # ─── Title: Kishor Hosiery (boxed, centered) ─────────────────────────
-        title_table = Table([["Kishor Hosiery"]], colWidths=[2.5*inch])
-        title_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 16),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BOX', (0, 0), (-1, -1), 1.2, colors.black),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ]))
-        # Center the title box
-        title_wrapper = Table([[title_table]], colWidths=[7.5*inch])
-        title_wrapper.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
-        elements.append(title_wrapper)
-        elements.append(Spacer(1, 0.25*inch))
-
-        # ─── Header Info: Order/Party/Location on left, Date/Godown/Bill on right ──
-        order_date = order_data.get('createdAt', datetime.now().isoformat())[:10]
-        header_data = [
-            [
-                Paragraph(f"<b>Order No:</b> <u>{order_data.get('orderId', 'N/A')}</u>", self.normal_style),
-                Paragraph(f"<b>Date:</b> <u>{order_date}</u>", self.normal_style),
-            ],
-            [
-                Paragraph(f"<b>Party Name:</b> <u>{order_data.get('partyName', 'N/A')}</u>", self.normal_style),
-                Paragraph(f"<b>Godown:</b> <u>{order_data.get('godown', 'N/A')}</u>", self.normal_style),
-            ],
-            [
-                Paragraph(f"<b>Location:</b> <u>{order_data.get('location', 'N/A')}</u>", self.normal_style),
-                Paragraph(f"<b>Bill No:</b> <u>{order_data.get('billNo', 'N/A')}</u>", self.normal_style),
-            ],
+        # ═══ 1. HEADER BAND (full-width dark bar with brand + invoice label) ═══
+        order_id = order_data.get('orderId', 'N/A')
+        brand_block = [
+            [Paragraph("KISHOR HOSIERY", self.brand_title)],
+            [Paragraph("Quality Hosiery &amp; Garments Manufacturing", self.brand_tagline)],
         ]
-        header_table = Table(header_data, colWidths=[4*inch, 3.5*inch])
-        header_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        brand_table = Table(brand_block, colWidths=[4*inch])
+        brand_table.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
         ]))
-        elements.append(header_table)
-        elements.append(Spacer(1, 0.2*inch))
 
-        # ─── Items Section: Each item listed with parcels ─────────────────────
+        invoice_block = [
+            [Paragraph("INVOICE", self.invoice_label)],
+            [Paragraph(f"Order #{order_id}", self.invoice_sub)],
+        ]
+        invoice_table = Table(invoice_block, colWidths=[3*inch])
+        invoice_table.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
+
+        header_band = Table(
+            [[brand_table, invoice_table]],
+            colWidths=[4.3*inch, 3.97*inch]
+        )
+        header_band.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), BRAND_DARK),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (0, 0), 0.5*inch),
+            ('RIGHTPADDING', (-1, 0), (-1, 0), 0.5*inch),
+            ('TOPPADDING', (0, 0), (-1, -1), 22),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 22),
+        ]))
+        elements.append(header_band)
+
+        # Thin amber accent strip under header
+        accent_strip = Table([[""]], colWidths=[PAGE_WIDTH], rowHeights=[4])
+        accent_strip.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), BRAND_ACCENT),
+        ]))
+        elements.append(accent_strip)
+        elements.append(Spacer(1, 0.3*inch))
+
+        # ═══ 2. INFO CARDS (Bill To | Invoice Details) ═══════════════════════
+        order_date = order_data.get('createdAt', datetime.now().isoformat())[:10]
+
+        def info_cell(label, value):
+            return [
+                Paragraph(label.upper(), self.section_label),
+                Spacer(1, 2),
+                Paragraph(str(value) if value else "—", self.info_value),
+            ]
+
+        # Left card: Bill To
+        bill_to_data = [
+            [Paragraph("BILL TO", ParagraphStyle(
+                'CardHeader', parent=self.styles['Normal'],
+                fontSize=9, textColor=WHITE, fontName='Helvetica-Bold',
+                alignment=TA_LEFT, leading=11
+            ))],
+            [Table([
+                info_cell("Party Name", order_data.get('partyName', 'N/A')),
+                [Spacer(1, 6)],
+                info_cell("Location", order_data.get('location', 'N/A')),
+                [Spacer(1, 6)],
+                info_cell("Godown", order_data.get('godown', 'N/A')),
+            ], colWidths=[3.2*inch])],
+        ]
+        bill_to_card = Table(bill_to_data, colWidths=[3.4*inch])
+        bill_to_card.setStyle(TableStyle([
+            # Header row
+            ('BACKGROUND', (0, 0), (-1, 0), BRAND_PRIMARY),
+            ('LEFTPADDING', (0, 0), (-1, 0), 12),
+            ('RIGHTPADDING', (0, 0), (-1, 0), 12),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            # Body row
+            ('BACKGROUND', (0, 1), (-1, 1), LIGHT_BG),
+            ('LEFTPADDING', (0, 1), (-1, 1), 12),
+            ('RIGHTPADDING', (0, 1), (-1, 1), 12),
+            ('TOPPADDING', (0, 1), (-1, 1), 10),
+            ('BOTTOMPADDING', (0, 1), (-1, 1), 10),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+        ]))
+
+        # Right card: Invoice Details
+        invoice_details_data = [
+            [Paragraph("INVOICE DETAILS", ParagraphStyle(
+                'CardHeader', parent=self.styles['Normal'],
+                fontSize=9, textColor=WHITE, fontName='Helvetica-Bold',
+                alignment=TA_LEFT, leading=11
+            ))],
+            [Table([
+                info_cell("Order No", order_id),
+                [Spacer(1, 6)],
+                info_cell("Date", order_date),
+                [Spacer(1, 6)],
+                info_cell("Bill No", order_data.get('billNo') or "—"),
+            ], colWidths=[3.2*inch])],
+        ]
+        invoice_details_card = Table(invoice_details_data, colWidths=[3.4*inch])
+        invoice_details_card.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), BRAND_PRIMARY),
+            ('LEFTPADDING', (0, 0), (-1, 0), 12),
+            ('RIGHTPADDING', (0, 0), (-1, 0), 12),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('BACKGROUND', (0, 1), (-1, 1), LIGHT_BG),
+            ('LEFTPADDING', (0, 1), (-1, 1), 12),
+            ('RIGHTPADDING', (0, 1), (-1, 1), 12),
+            ('TOPPADDING', (0, 1), (-1, 1), 10),
+            ('BOTTOMPADDING', (0, 1), (-1, 1), 10),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+        ]))
+
+        cards_row = Table(
+            [[bill_to_card, "", invoice_details_card]],
+            colWidths=[3.4*inch, 0.27*inch, 3.4*inch]
+        )
+        cards_row.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+
+        cards_wrapper = Table([[cards_row]], colWidths=[CONTENT_WIDTH])
+        cards_wrapper.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+            ('RIGHTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+        ]))
+        elements.append(cards_wrapper)
+        elements.append(Spacer(1, 0.3*inch))
+
+        # ═══ 3. ITEMS SECTIONS ═══════════════════════════════════════════════
         items = order_data.get('items', [])
         grand_total_weight = 0
         grand_total_parcels = 0
 
-        # Style for parcel list
-        parcel_style = ParagraphStyle(
-            'Parcel',
-            parent=self.styles['Normal'],
-            fontSize=10,
-            leftIndent=20,
-            spaceAfter=2,
+        # Section title
+        section_title = Table(
+            [[Paragraph(
+                "ORDER ITEMS",
+                ParagraphStyle('ST', parent=self.styles['Normal'], fontSize=10,
+                               textColor=BRAND_DARK, fontName='Helvetica-Bold',
+                               alignment=TA_LEFT, leading=12)
+            )]],
+            colWidths=[CONTENT_WIDTH]
         )
-        item_header_style = ParagraphStyle(
-            'ItemHeader',
-            parent=self.styles['Normal'],
-            fontSize=11,
-            fontName='Helvetica-Bold',
-        )
+        section_title.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+            ('RIGHTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(section_title)
+
+        # Divider line
+        divider = Table([[""]], colWidths=[CONTENT_WIDTH], rowHeights=[1.5])
+        divider.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), BRAND_ACCENT),
+            ('LEFTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+            ('RIGHTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+        ]))
+        divider_wrap = Table([[Table([[""]], colWidths=[CONTENT_WIDTH - 2*SIDE_MARGIN], rowHeights=[1.5], style=[('BACKGROUND', (0,0), (-1,-1), BRAND_ACCENT)])]], colWidths=[CONTENT_WIDTH])
+        divider_wrap.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+            ('RIGHTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+        ]))
+        elements.append(divider_wrap)
+        elements.append(Spacer(1, 0.15*inch))
 
         for idx, item in enumerate(items, start=1):
-            fulfillment = item.get('fulfillment', [])
+            fulfillment = item.get('fulfillment', []) or []
             weights = [w for w in fulfillment if w is not None]
             total_item_weight = sum(weights) if weights else 0
             total_item_parcels = len(weights)
 
             try:
-                rate_val = float(item.get('rate', 0))
+                rate_val = float(item.get('rate') or 0)
             except:
                 rate_val = 0
 
             grand_total_weight += total_item_weight
             grand_total_parcels += total_item_parcels
 
-            # Item header row: "(N) Print Name Item" on left, boxes on right
             print_name = item.get('printName', item.get('category', 'N/A'))
-            item_title = Paragraph(
-                f"<b>({idx}) {print_name}</b> — <i>{item.get('category', '')} / {item.get('size', '')}</i>",
-                item_header_style
-            )
+            category = item.get('category', '')
+            size = item.get('size', '')
 
-            # Three boxes: Total weight, Total Parcel, Rate
-            boxes_data = [[
-                f"Total Weight\n{total_item_weight:.2f} kg",
-                f"Total Parcel\n{total_item_parcels}",
-                f"Rate\n₹ {rate_val:.2f}",
-            ]]
-            boxes_table = Table(boxes_data, colWidths=[1.15*inch, 1.05*inch, 1*inch])
-            boxes_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('BOX', (0, 0), (0, 0), 0.8, colors.black),
-                ('BOX', (1, 0), (1, 0), 0.8, colors.black),
-                ('BOX', (2, 0), (2, 0), 0.8, colors.black),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            # Item header bar: dark background with number badge + name + category
+            item_title_text = f'<font color="#D97706"><b>#{idx}</b></font>  <b>{print_name}</b>  <font color="#94A3B8">&nbsp;&nbsp;|&nbsp;&nbsp; {category} · Size {size}</font>'
+            item_header = Table(
+                [[Paragraph(item_title_text, self.item_title_style)]],
+                colWidths=[CONTENT_WIDTH - 2*SIDE_MARGIN]
+            )
+            item_header.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), BRAND_DARK),
+                ('LEFTPADDING', (0, 0), (-1, -1), 14),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+                ('TOPPADDING', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
             ]))
 
-            # Combine title and boxes on same row
-            header_row = Table(
-                [[item_title, boxes_table]],
-                colWidths=[4.1*inch, 3.4*inch]
-            )
-            header_row.setStyle(TableStyle([
+            # Parcel grid - 4 columns
+            parcel_count = max(len(fulfillment), item.get('quantity', 0) or 0)
+            parcel_cells = []
+            for p_idx in range(parcel_count):
+                weight = fulfillment[p_idx] if p_idx < len(fulfillment) else None
+                if weight is not None:
+                    cell_content = [
+                        Paragraph(f"P{p_idx+1}", ParagraphStyle(
+                            'PLabel', parent=self.styles['Normal'],
+                            fontSize=8, textColor=TEXT_MUTED,
+                            fontName='Helvetica-Bold', alignment=TA_CENTER, leading=10
+                        )),
+                        Paragraph(f"{weight:.2f} kg", ParagraphStyle(
+                            'PWeight', parent=self.styles['Normal'],
+                            fontSize=11, textColor=TEXT_DARK,
+                            fontName='Helvetica-Bold', alignment=TA_CENTER, leading=13
+                        )),
+                    ]
+                else:
+                    cell_content = [
+                        Paragraph(f"P{p_idx+1}", ParagraphStyle(
+                            'PLabel', parent=self.styles['Normal'],
+                            fontSize=8, textColor=TEXT_MUTED,
+                            fontName='Helvetica-Bold', alignment=TA_CENTER, leading=10
+                        )),
+                        Paragraph("—", ParagraphStyle(
+                            'PEmpty', parent=self.styles['Normal'],
+                            fontSize=11, textColor=TEXT_MUTED,
+                            fontName='Helvetica', alignment=TA_CENTER, leading=13
+                        )),
+                    ]
+                parcel_cells.append(cell_content)
+
+            # Build parcel grid rows (4 per row)
+            parcel_rows = []
+            cols_per_row = 4
+            for i in range(0, len(parcel_cells), cols_per_row):
+                row = parcel_cells[i:i+cols_per_row]
+                while len(row) < cols_per_row:
+                    row.append("")
+                parcel_rows.append(row)
+
+            inner_w = CONTENT_WIDTH - 2*SIDE_MARGIN
+            col_w = inner_w / cols_per_row
+            if parcel_rows:
+                parcel_grid = Table(parcel_rows, colWidths=[col_w]*cols_per_row)
+                grid_style = [
+                    ('BACKGROUND', (0, 0), (-1, -1), WHITE),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                    ('TOPPADDING', (0, 0), (-1, -1), 10),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                    # Grid lines
+                    ('LINEBEFORE', (1, 0), (-1, -1), 0.3, BORDER),
+                    ('LINEABOVE', (0, 1), (-1, -1), 0.3, BORDER),
+                    ('BOX', (0, 0), (-1, -1), 0.5, BORDER_STRONG),
+                ]
+                # Alternate row backgrounds
+                for r in range(len(parcel_rows)):
+                    if r % 2 == 1:
+                        grid_style.append(('BACKGROUND', (0, r), (-1, r), LIGHT_BG))
+                parcel_grid.setStyle(TableStyle(grid_style))
+            else:
+                parcel_grid = Spacer(1, 1)
+
+            # Item summary strip (bottom of item card)
+            amount = total_item_weight * rate_val
+            summary_row = [[
+                Paragraph(
+                    f'<font color="#64748B" size="8">TOTAL WEIGHT</font><br/><b><font size="11" color="#0F172A">{total_item_weight:.2f} kg</font></b>',
+                    ParagraphStyle('s1', parent=self.styles['Normal'], alignment=TA_CENTER, leading=13)
+                ),
+                Paragraph(
+                    f'<font color="#64748B" size="8">TOTAL PARCELS</font><br/><b><font size="11" color="#0F172A">{total_item_parcels}</font></b>',
+                    ParagraphStyle('s2', parent=self.styles['Normal'], alignment=TA_CENTER, leading=13)
+                ),
+                Paragraph(
+                    f'<font color="#64748B" size="8">RATE / KG</font><br/><b><font size="11" color="#0F172A">Rs. {rate_val:,.2f}</font></b>',
+                    ParagraphStyle('s3', parent=self.styles['Normal'], alignment=TA_CENTER, leading=13)
+                ),
+                Paragraph(
+                    f'<font color="#FEF3C7" size="8">AMOUNT</font><br/><b><font size="12" color="#FFFFFF">Rs. {amount:,.2f}</font></b>',
+                    ParagraphStyle('s4', parent=self.styles['Normal'], alignment=TA_CENTER, leading=14)
+                ),
+            ]]
+            summary_table = Table(summary_row, colWidths=[col_w]*4)
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (2, -1), SUBTLE_BG),
+                ('BACKGROUND', (3, 0), (3, -1), BRAND_ACCENT),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('TOPPADDING', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                ('LINEBEFORE', (1, 0), (-1, -1), 0.3, BORDER),
+                ('BOX', (0, 0), (-1, -1), 0.5, BORDER_STRONG),
+            ]))
+
+            # Stack item parts and wrap with side margins
+            item_stack = Table(
+                [[item_header], [parcel_grid], [summary_table]],
+                colWidths=[CONTENT_WIDTH - 2*SIDE_MARGIN]
+            )
+            item_stack.setStyle(TableStyle([
                 ('LEFTPADDING', (0, 0), (-1, -1), 0),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
             ]))
-            elements.append(header_row)
-            elements.append(Spacer(1, 0.08*inch))
+            item_wrapper = Table([[item_stack]], colWidths=[CONTENT_WIDTH])
+            item_wrapper.setStyle(TableStyle([
+                ('LEFTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+                ('RIGHTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+            ]))
+            elements.append(KeepTogether(item_wrapper))
+            elements.append(Spacer(1, 0.2*inch))
 
-            # Parcel list: P1 - weight, P2 - weight, ...
-            if fulfillment:
-                for p_idx, weight in enumerate(fulfillment, start=1):
-                    if weight is not None:
-                        parcel_text = f"P{p_idx} — {weight:.2f} kg"
-                    else:
-                        parcel_text = f"P{p_idx} — —"
-                    elements.append(Paragraph(parcel_text, parcel_style))
-            else:
-                for p_idx in range(1, (item.get('quantity', 0) or 0) + 1):
-                    elements.append(Paragraph(f"P{p_idx} — —", parcel_style))
+        # ═══ 4. GRAND TOTAL BAR ═══════════════════════════════════════════════
+        grand_amount = 0
+        for item in items:
+            fulfillment = item.get('fulfillment') or []
+            weights = [w for w in fulfillment if w is not None]
+            try:
+                rv = float(item.get('rate') or 0)
+            except:
+                rv = 0
+            grand_amount += sum(weights) * rv
 
-            elements.append(Spacer(1, 0.15*inch))
-
-        # ─── Grand Total Boxes: Total Parcel, Total Weight ────────────────────
-        total_boxes_data = [[
-            f"Total Parcel\n{grand_total_parcels}",
-            f"Total Weight\n{grand_total_weight:.2f} kg",
+        grand_total_row = [[
+            Paragraph(
+                '<font color="#CBD5E1" size="9">TOTAL PARCELS</font><br/><b><font size="16" color="#FFFFFF">' + str(grand_total_parcels) + '</font></b>',
+                ParagraphStyle('g1', parent=self.styles['Normal'], alignment=TA_CENTER, leading=18)
+            ),
+            Paragraph(
+                f'<font color="#CBD5E1" size="9">TOTAL WEIGHT</font><br/><b><font size="16" color="#FFFFFF">{grand_total_weight:.2f} kg</font></b>',
+                ParagraphStyle('g2', parent=self.styles['Normal'], alignment=TA_CENTER, leading=18)
+            ),
+            Paragraph(
+                f'<font color="#FEF3C7" size="9">GRAND TOTAL</font><br/><b><font size="16" color="#FFFFFF">Rs. {grand_amount:,.2f}</font></b>',
+                ParagraphStyle('g3', parent=self.styles['Normal'], alignment=TA_CENTER, leading=18)
+            ),
         ]]
-        total_boxes_table = Table(total_boxes_data, colWidths=[1.5*inch, 1.5*inch])
-        total_boxes_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        inner_w = CONTENT_WIDTH - 2*SIDE_MARGIN
+        grand_table = Table(grand_total_row, colWidths=[inner_w/3]*3)
+        grand_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (1, -1), BRAND_DARK),
+            ('BACKGROUND', (2, 0), (2, -1), BRAND_ACCENT),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BOX', (0, 0), (0, 0), 1, colors.black),
-            ('BOX', (1, 0), (1, 0), 1, colors.black),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ]))
-        elements.append(Spacer(1, 0.15*inch))
-        elements.append(total_boxes_table)
-        elements.append(Spacer(1, 0.25*inch))
-
-        # ─── Dispatch Note Section ────────────────────────────────────────────
-        dispatch_label = Table([["Dispatch Note"]], colWidths=[1.5*inch])
-        dispatch_label.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BOX', (0, 0), (-1, -1), 1, colors.black),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 16),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 16),
+            ('LINEBEFORE', (1, 0), (-1, -1), 1, colors.HexColor('#334155')),
         ]))
-        elements.append(dispatch_label)
+        grand_wrapper = Table([[grand_table]], colWidths=[CONTENT_WIDTH])
+        grand_wrapper.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+            ('RIGHTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+        ]))
+        elements.append(grand_wrapper)
+        elements.append(Spacer(1, 0.3*inch))
 
-        dispatch_note_text = order_data.get('dispatchNote') or order_data.get('message') or ""
-        dispatch_box = Table(
-            [[Paragraph(dispatch_note_text, self.normal_style)]],
-            colWidths=[7.5*inch],
-            rowHeights=[0.8*inch]
+        # ═══ 5. DISPATCH NOTE ═════════════════════════════════════════════════
+        dispatch_note_text = order_data.get('dispatchNote') or order_data.get('message') or "—"
+
+        dispatch_card_data = [
+            [Paragraph("DISPATCH NOTE", ParagraphStyle(
+                'DispLabel', parent=self.styles['Normal'],
+                fontSize=9, textColor=WHITE, fontName='Helvetica-Bold',
+                alignment=TA_LEFT, leading=11
+            ))],
+            [Paragraph(dispatch_note_text, ParagraphStyle(
+                'DispBody', parent=self.styles['Normal'],
+                fontSize=10, textColor=TEXT_DARK, fontName='Helvetica',
+                alignment=TA_LEFT, leading=14
+            ))],
+        ]
+        dispatch_card = Table(dispatch_card_data, colWidths=[CONTENT_WIDTH - 2*SIDE_MARGIN])
+        dispatch_card.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), BRAND_PRIMARY),
+            ('LEFTPADDING', (0, 0), (-1, 0), 14),
+            ('RIGHTPADDING', (0, 0), (-1, 0), 14),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('BACKGROUND', (0, 1), (-1, 1), LIGHT_BG),
+            ('LEFTPADDING', (0, 1), (-1, 1), 14),
+            ('RIGHTPADDING', (0, 1), (-1, 1), 14),
+            ('TOPPADDING', (0, 1), (-1, 1), 14),
+            ('BOTTOMPADDING', (0, 1), (-1, 1), 14),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+        ]))
+        dispatch_wrapper = Table([[dispatch_card]], colWidths=[CONTENT_WIDTH])
+        dispatch_wrapper.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+            ('RIGHTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+        ]))
+        elements.append(dispatch_wrapper)
+        elements.append(Spacer(1, 0.4*inch))
+
+        # ═══ 6. FOOTER ════════════════════════════════════════════════════════
+        footer_text = (
+            f"<b>Thank you for your business!</b><br/>"
+            f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')} · Kishor Hosiery"
         )
-        dispatch_box.setStyle(TableStyle([
-            ('BOX', (0, 0), (-1, -1), 1, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 8),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        footer_para = Paragraph(footer_text, self.footer_style)
+        footer_wrapper = Table([[footer_para]], colWidths=[CONTENT_WIDTH])
+        footer_wrapper.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+            ('RIGHTPADDING', (0, 0), (-1, -1), SIDE_MARGIN),
+            ('TOPPADDING', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('LINEABOVE', (0, 0), (-1, -1), 0.5, BORDER),
         ]))
-        elements.append(dispatch_box)
+        elements.append(footer_wrapper)
 
         # Build PDF
         pdf.build(elements)
