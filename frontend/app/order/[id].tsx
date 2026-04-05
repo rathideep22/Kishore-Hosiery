@@ -1331,8 +1331,8 @@ const styles = StyleSheet.create({
   downloadPdfBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
   downloadPdfBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
   // Split Order Button
-  splitBtn: { flexDirection: 'row', backgroundColor: '#000', borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
-  splitBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
+  splitBtn: { flexDirection: 'row', backgroundColor: '#000', borderRadius: 12, height: 40, justifyContent: 'center', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.md },
+  splitBtnText: { color: '#FFF', fontSize: FontSize.sm, fontWeight: '700' },
   // Split Modal
   godownOptions: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.xl },
   godownOption: { flex: 1, borderWidth: 2, borderColor: Colors.border, borderRadius: 8, paddingVertical: Spacing.lg, alignItems: 'center' },

@@ -725,12 +725,12 @@ const styles = StyleSheet.create({
   },
   startBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13, numberOfLines: 1 },
   splitBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: '#000', borderRadius: 10,
-    paddingVertical: 10, paddingHorizontal: 16,
-    justifyContent: 'center', marginTop: 8, minHeight: 40,
+    paddingVertical: 6, paddingHorizontal: 12,
+    justifyContent: 'center', marginTop: 8, minHeight: 32,
   },
-  splitBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13, numberOfLines: 1 },
+  splitBtnText: { color: '#FFF', fontWeight: '700', fontSize: 11, numberOfLines: 1 },
 
   // Category
   itemsContainer: { flex: 1 },
