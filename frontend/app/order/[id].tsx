@@ -593,7 +593,7 @@ export default function OrderDetailScreen() {
                     {order.readinessStatus === 'Completed' ? 'COMPLETED' : order.readinessStatus === 'Bill Generated' ? 'BILL GENERATED' : order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
                   </Text>
                 </View>
-                {(order.readinessStatus === 'Ready' || order.readinessStatus === 'Partial Ready' || order.readinessStatus === 'Completed') && (
+                {(order.readinessStatus === 'Ready' || order.readinessStatus === 'Partial Ready' || order.readinessStatus === 'Dispatched' || order.readinessStatus === 'Bill Generated' || order.readinessStatus === 'Completed') && (
                   <View style={styles.totalWeightBadge}>
                     <Text style={styles.totalWeightLabel}>Total Wt</Text>
                     <Text style={styles.totalWeightValue}>{calculateTotalWeight().toFixed(2)} kg</Text>

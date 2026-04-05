@@ -27,6 +27,8 @@ interface FulfillmentSummary {
   category: string;
   fulfilled: number;
   total: number;
+  rate?: string;
+  totalWeight: number;
 }
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -261,9 +263,20 @@ export function OrderFulfillment({
   const getSummary = (): FulfillmentSummary[] => {
     const s: Record<string, FulfillmentSummary> = {};
     items.forEach(item => {
-      if (!s[item.category]) s[item.category] = { category: item.category, fulfilled: 0, total: 0 };
+      if (!s[item.category]) {
+        s[item.category] = {
+          category: item.category,
+          fulfilled: 0,
+          total: 0,
+          rate: item.rate,
+          totalWeight: 0
+        };
+      }
       s[item.category].fulfilled += (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
       s[item.category].total += item.quantity;
+      // Sum all weights in this category
+      const weights = (item.fulfillment || []).filter(w => w !== null && w !== undefined) as number[];
+      s[item.category].totalWeight += weights.reduce((sum, w) => sum + w, 0);
     });
     return Object.values(s);
   };
@@ -426,11 +439,17 @@ export function OrderFulfillment({
             const partial = cat.fulfilled > 0 && !done;
             const badge = done ? Colors.success : partial ? Colors.warning : Colors.danger;
             return (
-              <View key={cat.category} style={styles.summaryRow}>
-                <Text style={styles.summaryCategory}>{cat.category}</Text>
-                <View style={[styles.summaryBadge, { backgroundColor: badge + '20', borderColor: badge + '40' }]}>
-                  <Text style={[styles.summaryValue, { color: badge }]}>{cat.fulfilled}/{cat.total}</Text>
-                  {done && <Ionicons name="checkmark" size={12} color={badge} />}
+              <View key={cat.category}>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryCategory}>{cat.category}</Text>
+                  <View style={[styles.summaryBadge, { backgroundColor: badge + '20', borderColor: badge + '40' }]}>
+                    <Text style={[styles.summaryValue, { color: badge }]}>{cat.fulfilled}/{cat.total}</Text>
+                    {done && <Ionicons name="checkmark" size={12} color={badge} />}
+                  </View>
+                </View>
+                <View style={styles.summaryDetails}>
+                  {cat.rate && <Text style={styles.summaryRate}>₹{cat.rate}/unit</Text>}
+                  {cat.totalWeight > 0 && <Text style={styles.summaryWeight}>{cat.totalWeight.toFixed(2)} kg</Text>}
                 </View>
               </View>
             );
@@ -747,10 +766,13 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
   },
   summaryTitle: { fontSize: 10, fontWeight: '800', color: Colors.textSecondary, letterSpacing: 1.5, marginBottom: 10 },
-  summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: Spacing.xs },
+  summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, gap: Spacing.xs },
   summaryCategory: { fontSize: 12, fontWeight: '600', color: Colors.text, flex: 1, numberOfLines: 1 },
   summaryBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 16, borderWidth: 1 },
   summaryValue: { fontSize: 12, fontWeight: '700', numberOfLines: 1 },
+  summaryDetails: { flexDirection: 'row', gap: Spacing.md, marginBottom: 8, marginLeft: 0, paddingLeft: Spacing.xs },
+  summaryRate: { fontSize: 11, fontWeight: '600', color: Colors.brand, backgroundColor: Colors.brand + '15', paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: 4 },
+  summaryWeight: { fontSize: 11, fontWeight: '600', color: Colors.success, backgroundColor: Colors.success + '15', paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: 4 },
   doneBtn: {
     marginTop: 12, backgroundColor: Colors.brand, borderRadius: 12,
     paddingVertical: 12, alignItems: 'center', minHeight: 44,
