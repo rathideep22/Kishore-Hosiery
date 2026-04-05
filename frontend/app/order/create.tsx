@@ -318,6 +318,12 @@ export default function CreateOrderScreen() {
     0
   );
 
+  const calculateTotalWeight = () => {
+    // Note: For order creation, we won't have fulfillment data yet
+    // This is placeholder - actual weight will be calculated during fulfillment entry
+    return 0;
+  };
+
   const submit = async () => {
     if (!partyName.trim()) {
       Alert.alert('Missing Party Name', 'Please enter the party/customer name');
@@ -532,6 +538,10 @@ export default function CreateOrderScreen() {
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Total Parcels:</Text>
                 <Text style={styles.summaryValue}>{totalParcels}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Total Weight:</Text>
+                <Text style={styles.summaryValue}>0.00 kg</Text>
               </View>
             </View>
           )}
