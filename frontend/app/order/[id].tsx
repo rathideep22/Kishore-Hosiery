@@ -642,35 +642,22 @@ export default function OrderDetailScreen() {
                         )}
                       </TouchableOpacity>
 
-                      {/* Variants List View */}
+                      {/* Variants Table View */}
                       <View style={styles.variantsList}>
                         {/* Headers */}
                         <View style={[styles.variantItem, { backgroundColor: 'transparent', paddingHorizontal: 0, paddingVertical: 4, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: Colors.border, borderRadius: 0 }]}>
-                          <Text style={[styles.variantSize, { color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]} numberOfLines={1}>SIZE</Text>
-                          {order.dispatched && (isAdmin || isAccountant) ? (
-                            <>
-                              <Text style={[{ flex: 0.6, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]} numberOfLines={1}>QTY</Text>
-                              <Text style={[{ flex: 1.2, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]} numberOfLines={1}>WEIGHT</Text>
-                            </>
-                          ) : (
-                            <Text style={[{ flex: 0.8, textAlign: 'center', color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]} numberOfLines={1}>QTY</Text>
-                          )}
-                          <Text style={[styles.variantRate, { color: Colors.textSecondary, fontSize: 11, fontWeight: '700' }]} numberOfLines={1}>RATE</Text>
+                          <Text style={[styles.variantSize, { color: Colors.textSecondary, fontSize: 10, fontWeight: '700' }]} numberOfLines={1}>SIZE</Text>
+                          <Text style={[{ flex: 0.5, textAlign: 'center', color: Colors.textSecondary, fontSize: 10, fontWeight: '700' }]} numberOfLines={1}>QTY</Text>
+                          <Text style={[{ flex: 1.0, textAlign: 'center', color: Colors.textSecondary, fontSize: 10, fontWeight: '700' }]} numberOfLines={1}>WEIGHT</Text>
+                          <Text style={[styles.variantRate, { color: Colors.textSecondary, fontSize: 10, fontWeight: '700' }]} numberOfLines={1}>RATE</Text>
                         </View>
                         {items.map((item, idx) => {
-                          const fulfilledQty = (item.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length;
                           const totalWeight = (item.fulfillment || []).reduce((sum: number, w: any) => sum + (w || 0), 0).toFixed(2);
                           return (
                             <View key={idx} style={styles.variantItem}>
                               <Text style={styles.variantSize} numberOfLines={1}>{item.size}</Text>
-                              {order.dispatched && (isAdmin || isAccountant) ? (
-                                <>
-                                  <Text style={{ flex: 0.6, textAlign: 'center', fontSize: FontSize.sm, fontWeight: '700', color: Colors.text }} numberOfLines={1}>{fulfilledQty}</Text>
-                                  <Text style={{ flex: 1.2, textAlign: 'center', fontSize: FontSize.sm, fontWeight: '700', color: Colors.success }} numberOfLines={1}>{totalWeight}kg</Text>
-                                </>
-                              ) : (
-                                <Text style={{ flex: 0.8, textAlign: 'center', fontSize: FontSize.sm, fontWeight: '700', color: Colors.text }} numberOfLines={1}>{item.quantity}</Text>
-                              )}
+                              <Text style={{ flex: 0.5, textAlign: 'center', fontSize: FontSize.sm, fontWeight: '700', color: Colors.text }} numberOfLines={1}>{item.quantity}</Text>
+                              <Text style={{ flex: 1.0, textAlign: 'center', fontSize: FontSize.sm, fontWeight: '700', color: Colors.success }} numberOfLines={1}>{totalWeight}kg</Text>
                               {item.rate && <Text style={styles.variantRate} numberOfLines={1}>₹{item.rate}</Text>}
                             </View>
                           );
