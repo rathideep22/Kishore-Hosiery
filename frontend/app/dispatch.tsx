@@ -40,9 +40,6 @@ export default function DispatchScreen() {
   const [loading, setLoading] = useState(true);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchNote, setDispatchNote] = useState('');
-  const [showGodownModal, setShowGodownModal] = useState(false);
-  const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
-  const [remainingItems, setRemainingItems] = useState<any[]>([]);
 
   // Get godown from route params
   const godown = routeParams.godown || 'All';
@@ -97,18 +94,7 @@ export default function DispatchScreen() {
       setDispatching(true);
       // Dispatch each selected order
       for (const orderId of Array.from(selectedOrders)) {
-        const response = await api.put(`/orders/${orderId}/dispatch`, { dispatchNote: dispatchNote.trim() });
-        console.log('Dispatch response:', response);
-
-        // Check if remainder order needs godown confirmation
-        if (response && response.needsGodownConfirmation) {
-          console.log('Showing godown modal for order:', orderId);
-          setPendingOrderId(orderId);
-          setRemainingItems(response.remainingItems || []);
-          setShowGodownModal(true);
-          setDispatching(false);
-          return; // Stop and wait for godown selection
-        }
+        await api.put(`/orders/${orderId}/dispatch`, { dispatchNote: dispatchNote.trim() });
       }
 
       // All orders dispatched successfully
@@ -119,35 +105,6 @@ export default function DispatchScreen() {
     } catch (error: any) {
       console.error('Dispatch error:', error);
       Alert.alert('Error', error.message || 'Failed to dispatch orders');
-    } finally {
-      setDispatching(false);
-    }
-  };
-
-  const handleGodownSelected = async (selectedGodown: string) => {
-    if (!pendingOrderId) return;
-
-    try {
-      setShowGodownModal(false);
-      setDispatching(true);
-
-      // Call dispatch again with godown selected
-      await api.put(`/orders/${pendingOrderId}/dispatch`, {
-        dispatchNote: dispatchNote.trim(),
-        remainderGodown: selectedGodown
-      });
-
-      Alert.alert('Success', 'Order dispatched successfully');
-      setPendingOrderId(null);
-      setRemainingItems([]);
-
-      // Refresh and go back
-      await fetchNonDispatchedOrders();
-      setTimeout(() => {
-        router.back();
-      }, 800);
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to dispatch order');
     } finally {
       setDispatching(false);
     }
@@ -290,49 +247,6 @@ export default function DispatchScreen() {
         </>
       )}
 
-      {/* Godown Selection Modal */}
-      {showGodownModal && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Godown for Remainder Order</Text>
-            <Text style={styles.modalSubtitle}>
-              {remainingItems.reduce((sum: number, item: any) => sum + item.quantity, 0)} parcels remaining
-            </Text>
-
-            <View style={styles.godownOptions}>
-              <TouchableOpacity
-                style={styles.godownBtn}
-                onPress={() => handleGodownSelected('Sundha')}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="home" size={24} color={Colors.brand} />
-                <Text style={styles.godownBtnText}>Sundha</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.godownBtn}
-                onPress={() => handleGodownSelected('Lal-Shivnagar')}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="storefront" size={24} color={Colors.brand} />
-                <Text style={styles.godownBtnText}>Lal-Shivnagar</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => {
-                setShowGodownModal(false);
-                setPendingOrderId(null);
-                setDispatching(false);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
     </SafeAreaView>
   );
 }
@@ -371,10 +285,4 @@ const styles = StyleSheet.create({
   modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 1000, paddingHorizontal: Spacing.md },
   modalContent: { backgroundColor: Colors.bg, borderRadius: 14, padding: Spacing.md, width: '100%', maxWidth: 320, alignItems: 'center' },
   modalTitle: { fontSize: FontSize.md, fontWeight: '800', color: Colors.text, marginBottom: Spacing.xs, textAlign: 'center', numberOfLines: 1 },
-  modalSubtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginBottom: Spacing.md, textAlign: 'center' },
-  godownOptions: { width: '100%', gap: Spacing.sm, marginBottom: Spacing.md },
-  godownBtn: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.brand, borderRadius: 10, paddingVertical: Spacing.md, gap: Spacing.sm, minHeight: 44 },
-  godownBtnText: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.brand, numberOfLines: 1 },
-  cancelBtn: { width: '100%', borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingVertical: Spacing.sm, minHeight: 40 },
-  cancelBtnText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.text, textAlign: 'center', numberOfLines: 1 },
 });

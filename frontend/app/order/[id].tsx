@@ -105,6 +105,9 @@ export default function OrderDetailScreen() {
   const [editFilteredVariants, setEditFilteredVariants] = useState<any[]>([]);
   const [editVariantSelections, setEditVariantSelections] = useState<any[]>([]);
   const [categoryMetas, setCategoryMetas] = useState<Record<string, boolean>>({});
+  const [showSplitModal, setShowSplitModal] = useState(false);
+  const [splitGodown, setSplitGodown] = useState('');
+  const [splittingOrder, setSplittingOrder] = useState(false);
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -181,6 +184,27 @@ export default function OrderDetailScreen() {
     }, [fetchOrder])
   );
 
+  const handleSplitOrder = async () => {
+    if (!splitGodown) {
+      Alert.alert('Select Godown', 'Please select which godown to send the remainder to');
+      return;
+    }
+
+    setSplittingOrder(true);
+    try {
+      const response = await api.put(`/orders/${id}/split`, {
+        remainderGodown: splitGodown
+      });
+      Alert.alert('Success', 'Order split successfully. Remainder order created.');
+      setShowSplitModal(false);
+      setSplitGodown('');
+      await fetchOrder();
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to split order');
+    } finally {
+      setSplittingOrder(false);
+    }
+  };
 
   const saveEdit = async () => {
     setActionLoading('edit');
@@ -718,6 +742,20 @@ export default function OrderDetailScreen() {
             </View>
           )}
 
+          {/* Split Order - show for partially filled or pending orders */}
+          {!order.dispatched && (order.readinessStatus === 'Partial Ready' || order.readinessStatus === 'Pending') && (
+            <View style={styles.section}>
+              <TouchableOpacity
+                style={styles.splitBtn}
+                onPress={() => setShowSplitModal(true)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="git-branch" size={20} color="#FFF" />
+                <Text style={styles.splitBtnText}>Split Order</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Download PDF - show for completed orders */}
           {order.completed && order.billPdfUrl && (
             <View style={styles.section}>
@@ -1042,6 +1080,58 @@ export default function OrderDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Split Order Modal */}
+      <Modal visible={showSplitModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Split Order</Text>
+            <Text style={styles.modalLabel}>Select Godown for Remainder</Text>
+
+            <View style={styles.godownOptions}>
+              <TouchableOpacity
+                style={[styles.godownOption, splitGodown === 'Sundha' && styles.godownOptionSelected]}
+                onPress={() => setSplitGodown('Sundha')}
+              >
+                <Text style={[styles.godownOptionText, splitGodown === 'Sundha' && styles.godownOptionTextSelected]}>
+                  Sundha
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.godownOption, splitGodown === 'Lal-Shivnagar' && styles.godownOptionSelected]}
+                onPress={() => setSplitGodown('Lal-Shivnagar')}
+              >
+                <Text style={[styles.godownOptionText, splitGodown === 'Lal-Shivnagar' && styles.godownOptionTextSelected]}>
+                  Lal-Shivnagar
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => {
+                  setShowSplitModal(false);
+                  setSplitGodown('');
+                }}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, splittingOrder && styles.btnDisabled]}
+                onPress={handleSplitOrder}
+                disabled={splittingOrder}
+              >
+                {splittingOrder ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <Text style={styles.saveText}>Split</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1240,4 +1330,13 @@ const styles = StyleSheet.create({
   // Download PDF Button
   downloadPdfBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
   downloadPdfBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
+  // Split Order Button
+  splitBtn: { flexDirection: 'row', backgroundColor: Colors.warning, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
+  splitBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
+  // Split Modal
+  godownOptions: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.xl },
+  godownOption: { flex: 1, borderWidth: 2, borderColor: Colors.border, borderRadius: 8, paddingVertical: Spacing.lg, alignItems: 'center' },
+  godownOptionSelected: { borderColor: Colors.brand, backgroundColor: Colors.brand + '10' },
+  godownOptionText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text },
+  godownOptionTextSelected: { color: Colors.brand, fontWeight: '700' },
 });
