@@ -28,6 +28,12 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production'
 JWT_ALGORITHM = 'HS256'
 MOCK_OTP = '1234'
 
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
+AWS_S3_BUCKET = os.environ.get('AWS_S3_BUCKET', 'bills-kishore')
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
@@ -472,7 +478,7 @@ async def complete_order(order_id: str, user: dict = Depends(get_auth_user)):
     # Generate PDF and upload to S3
     pdf_url = None
     try:
-        pdf_generator = OrderPDFGenerator(bucket_name="bills-kishore")
+        pdf_generator = OrderPDFGenerator()
         pdf_url = pdf_generator.generate_order_bill(order)
     except Exception as e:
         logging.error(f"Error generating PDF for order {order_id}: {str(e)}")

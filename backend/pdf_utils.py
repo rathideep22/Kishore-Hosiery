@@ -1,5 +1,6 @@
 """PDF generation utilities for order bills"""
 import io
+import os
 from datetime import datetime
 from typing import List, Dict, Any
 import boto3
@@ -12,9 +13,25 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
 
 class OrderPDFGenerator:
-    def __init__(self, bucket_name: str):
-        self.bucket_name = bucket_name
-        self.s3_client = boto3.client('s3')
+    def __init__(self, bucket_name: str = None):
+        self.bucket_name = bucket_name or os.environ.get('AWS_S3_BUCKET', 'bills-kishore')
+
+        # Create S3 client with credentials from environment or boto3 defaults
+        aws_access_key = os.environ.get('AWS_ACCESS_KEY_ID')
+        aws_secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
+        aws_region = os.environ.get('AWS_REGION', 'us-east-1')
+
+        if aws_access_key and aws_secret_key:
+            self.s3_client = boto3.client(
+                's3',
+                aws_access_key_id=aws_access_key,
+                aws_secret_access_key=aws_secret_key,
+                region_name=aws_region
+            )
+        else:
+            # Use default credentials (from ~/.aws/credentials or IAM role)
+            self.s3_client = boto3.client('s3', region_name=aws_region)
+
         self.styles = getSampleStyleSheet()
         self._setup_styles()
 
