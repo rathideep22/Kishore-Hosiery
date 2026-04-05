@@ -159,8 +159,9 @@ export default function OrderDetailScreen() {
 
   const completeOrder = async () => {
     try {
-      await api.put(`/orders/${id}/complete`, {});
-      router.back();
+      const updated = await api.put(`/orders/${id}/complete`, {});
+      setOrder(updated);
+      Alert.alert('Success', 'Order completed! PDF generated.');
     } catch (e: any) {
       Alert.alert('Error', e.message);
     }

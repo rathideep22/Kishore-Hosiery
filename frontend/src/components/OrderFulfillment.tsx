@@ -143,6 +143,12 @@ export function OrderFulfillment({
             return;
           }
 
+          // ONLY ADVANCE if auto-advance is enabled
+          if (!enableAutoAdvance) {
+            // Auto-advance disabled: save and stay on current parcel
+            return;
+          }
+
           // ONLY ADVANCE if current is done
           const fulfilled = (updatedItem.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length;
           if (fulfilled < updatedItem.quantity) {
@@ -195,7 +201,7 @@ export function OrderFulfillment({
     } finally {
       setSaving(null);
     }
-  }, [orderId, onUpdate]);
+  }, [orderId, onUpdate, enableAutoAdvance]);
 
   // Cleanup auto-advance timers on unmount
   useEffect(() => {
@@ -473,7 +479,7 @@ export function OrderFulfillment({
           )}
         </View>
 
-        <View style={{ height: Math.max(280, insets.bottom + 100) }} />
+        <View style={{ height: insets.bottom + 20 }} />
       </ScrollView>
 
       {/* ── Bottom Entry Panel ── */}

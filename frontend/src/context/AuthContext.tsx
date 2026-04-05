@@ -127,7 +127,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const connectWebSocket = (tkn: string) => {
-    const wsUrl = 'ws://13.60.90.159';
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://13.60.90.159';
+    const wsUrl = backendUrl.replace('http', 'ws');
     const ws = new WebSocket(`${wsUrl}/api/ws?token=${tkn}`);
     ws.onmessage = (event) => {
       try {

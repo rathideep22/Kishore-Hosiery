@@ -1,4 +1,4 @@
-const BACKEND_URL = 'http://13.60.90.159';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://13.60.90.159';
 
 class ApiClient {
   private token: string | null = null;

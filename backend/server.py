@@ -189,10 +189,11 @@ async def create_notification(user_id: str, message: str, ntype: str, order_id: 
         "type": ntype,
         "orderId": order_id,
         "read": False,
+        "sound": True,
         "createdAt": datetime.now(timezone.utc).isoformat()
     }
     await db.notifications.insert_one({**notif})
-    await manager.send_to_user(user_id, {"type": "NOTIFICATION", "notification": notif})
+    await manager.send_to_user(user_id, {"type": "NOTIFICATION", "notification": notif, "sound": True})
     return notif
 
 
@@ -478,10 +479,12 @@ async def complete_order(order_id: str, user: dict = Depends(get_auth_user)):
     # Generate PDF and upload to S3
     pdf_url = None
     try:
+        logging.info(f"🔄 Starting PDF generation for order {order_id}")
         pdf_generator = OrderPDFGenerator()
         pdf_url = pdf_generator.generate_order_bill(order)
+        logging.info(f"✅ PDF generated successfully: {pdf_url}")
     except Exception as e:
-        logging.error(f"Error generating PDF for order {order_id}: {str(e)}")
+        logging.error(f"❌ Error generating PDF for order {order_id}: {str(e)}", exc_info=True)
         # Continue with order completion even if PDF generation fails
 
     update = {
@@ -498,6 +501,26 @@ async def complete_order(order_id: str, user: dict = Depends(get_auth_user)):
     await db.orders.update_one({"id": order_id}, {"$set": update})
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
     await create_audit_log(user['id'], "ORDER_COMPLETED", order_id, f"Completed order {order['orderId']}")
+
+    # Notify all users about order completion
+    admin_users = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
+    for admin_user in admin_users:
+        await create_notification(admin_user['id'],
+            f"Order {order['orderId']} has been completed!",
+            "order_completed", order['id'])
+
+    accountant_users = await db.users.find({"role": "accountant"}, {"_id": 0}).to_list(10)
+    for accountant_user in accountant_users:
+        await create_notification(accountant_user['id'],
+            f"Order {order['orderId']} has been completed!",
+            "order_completed", order['id'])
+
+    staff_users = await db.users.find({"role": "staff"}, {"_id": 0}).to_list(100)
+    for staff_user in staff_users:
+        await create_notification(staff_user['id'],
+            f"Order {order['orderId']} has been completed!",
+            "order_completed", order['id'])
+
     await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
     return updated
 
@@ -577,87 +600,14 @@ async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(
     try:
         body = await request.json()
         dispatch_note = body.get("dispatchNote", "")
-        remainder_godown = body.get("remainderGodown", "")
     except Exception:
         dispatch_note = ""
-        remainder_godown = ""
 
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
     new_val = not order.get('dispatched', False)
-
-    # If dispatching (setting to True), check for partial fulfillment
-    if new_val:
-        items = order.get('items', [])
-        remaining_items = []
-
-        # Calculate remaining parcels for each item
-        for item in items:
-            fulfilled = sum(1 for w in item.get('fulfillment', []) if w is not None)
-            remaining = item.get('quantity', 0) - fulfilled
-
-            # Only add to remaining if there are unfulfilled parcels
-            if remaining > 0:
-                remaining_items.append({
-                    "productId": item['productId'],
-                    "alias": item['alias'],
-                    "category": item['category'],
-                    "size": item['size'],
-                    "printName": item['printName'],
-                    "quantity": remaining,
-                    "rate": item.get('rate'),
-                    "requireSerialNo": item.get('requireSerialNo', False)
-                })
-
-        # Check if we need to ask for godown selection FIRST
-        has_remaining = len(remaining_items) > 0
-        has_godown_selected = bool(remainder_godown and remainder_godown.strip())
-
-        # If there are remaining items but no godown selected yet, ask for it
-        if has_remaining and not has_godown_selected:
-            response = {
-                "needsGodownConfirmation": True,
-                "remainingItems": remaining_items,
-                "totalRemaining": sum(item['quantity'] for item in remaining_items)
-            }
-            return response
-
-        # If godown is selected, create remainder order
-        if has_remaining and has_godown_selected:
-            order_num = await get_next_order_id()
-            new_order_id_value = str(uuid.uuid4())
-            new_order_display_id = f"KH-{order_num:04d}"
-
-            new_order = {
-                "id": new_order_id_value,
-                "orderId": new_order_display_id,
-                "partyName": order['partyName'],
-                "location": order.get('location', ''),
-                "godown": remainder_godown,
-                "message": f"Remaining parcels from {order['orderId']}",
-                "totalParcels": sum(item['quantity'] for item in remaining_items),
-                "items": remaining_items,
-                "readinessStatus": "Pending",
-                "dispatched": False,
-                "dispatchedAt": None,
-                "createdByName": "System",
-                "createdAt": datetime.now(timezone.utc).isoformat(),
-                "updatedAt": datetime.now(timezone.utc).isoformat(),
-                "godownDistribution": [],
-                "parentOrderId": order_id
-            }
-
-            # Insert the new order
-            await db.orders.insert_one(new_order)
-
-            # Notify admins about the new order
-            admins = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
-            for admin_user in admins:
-                await create_notification(admin_user['id'],
-                    f"System created remainder order {new_order_display_id} for {order['partyName']} (from {order['orderId']}) in {remainder_godown}",
-                    "order_created", new_order_id_value)
 
     update_data = {
         "dispatched": new_val,
@@ -667,18 +617,179 @@ async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(
         update_data["dispatchedAt"] = datetime.now(timezone.utc).isoformat()
         if dispatch_note:
             update_data["dispatchNote"] = dispatch_note
+
     await db.orders.update_one({"id": order_id}, {"$set": update_data})
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+
     await create_audit_log(user['id'], "DISPATCH_UPDATED", order_id,
         f"Order {order['orderId']} {'dispatched' if new_val else 'un-dispatched'}")
+
     if new_val:
-        admins = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
-        for admin_user in admins:
+        # Notify admins and accountants of dispatch
+        admin_users = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
+        for admin_user in admin_users:
             await create_notification(admin_user['id'],
                 f"Order {order['orderId']} has been dispatched!",
                 "order_dispatched", order['id'])
+
+        accountant_users = await db.users.find({"role": "accountant"}, {"_id": 0}).to_list(10)
+        for accountant_user in accountant_users:
+            await create_notification(accountant_user['id'],
+                f"Order {order['orderId']} has been dispatched!",
+                "order_dispatched", order['id'])
+
     await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
     return updated
+
+
+@api_router.put("/orders/{order_id}/split")
+async def split_order(order_id: str, req: Request, user: dict = Depends(get_auth_user)):
+    """Split order into ready and remainder orders"""
+    try:
+        body = await req.json()
+        remainder_godown = body.get("remainderGodown", "")
+    except Exception:
+        remainder_godown = ""
+
+    if not remainder_godown or not remainder_godown.strip():
+        raise HTTPException(status_code=400, detail="remainderGodown is required")
+
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    items = order.get('items', [])
+    remaining_items = []
+
+    # Calculate remaining parcels for each item
+    for item in items:
+        fulfilled = sum(1 for w in item.get('fulfillment', []) if w is not None)
+        remaining = item.get('quantity', 0) - fulfilled
+
+        # Only add to remaining if there are unfulfilled parcels
+        if remaining > 0:
+            remaining_items.append({
+                "productId": item['productId'],
+                "alias": item['alias'],
+                "category": item['category'],
+                "size": item['size'],
+                "printName": item['printName'],
+                "quantity": remaining,
+                "rate": item.get('rate'),
+                "requireSerialNo": item.get('requireSerialNo', False)
+            })
+
+    if not remaining_items:
+        raise HTTPException(status_code=400, detail="No unfulfilled parcels to split")
+
+    # Create remainder order
+    order_num = await get_next_order_id()
+    new_order_id_value = str(uuid.uuid4())
+    new_order_display_id = f"KH-{order_num:04d}"
+
+    new_order = {
+        "id": new_order_id_value,
+        "orderId": new_order_display_id,
+        "partyName": order['partyName'],
+        "location": order.get('location', ''),
+        "godown": remainder_godown,
+        "message": f"Remaining parcels from {order['orderId']}",
+        "totalParcels": sum(item['quantity'] for item in remaining_items),
+        "items": remaining_items,
+        "readinessStatus": "Pending",
+        "dispatched": False,
+        "dispatchedAt": None,
+        "createdByName": user.get('name', 'System'),
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "godownDistribution": [],
+        "parentOrderId": order_id
+    }
+
+    # Insert the new order
+    result = await db.orders.insert_one(new_order)
+
+    # Fetch the newly created order to get it with proper formatting
+    inserted_order = await db.orders.find_one({"id": new_order_id_value}, {"_id": 0})
+
+    # Update original order: keep only fulfilled items, update totalParcels
+    original_order_items = order.get('items', [])
+
+    # Create updated items list with only fulfilled parcels
+    updated_items_for_original = []
+    total_fulfilled_in_original = 0
+
+    for item in original_order_items:
+        fulfilled_weights = [w for w in item.get('fulfillment', []) if w is not None]
+        fulfilled = len(fulfilled_weights)
+
+        if fulfilled > 0:
+            # Keep only fulfilled parcels in original order
+            updated_item = {
+                "productId": item['productId'],
+                "alias": item['alias'],
+                "category": item['category'],
+                "size": item['size'],
+                "printName": item['printName'],
+                "quantity": fulfilled,
+                "rate": item.get('rate'),
+                "requireSerialNo": item.get('requireSerialNo', False),
+                "fulfillment": fulfilled_weights,
+            }
+            if item.get('serialNumbers'):
+                # Keep only fulfilled serial numbers
+                updated_item['serialNumbers'] = [
+                    item['serialNumbers'][i]
+                    for i in range(len(item.get('fulfillment', [])))
+                    if item['fulfillment'][i] is not None
+                ]
+            updated_items_for_original.append(updated_item)
+            total_fulfilled_in_original += fulfilled
+
+    original_order_update = {
+        "items": updated_items_for_original,
+        "totalParcels": total_fulfilled_in_original,
+        "readinessStatus": "Ready" if total_fulfilled_in_original > 0 else "Pending",
+        "updatedAt": datetime.now(timezone.utc).isoformat()
+    }
+
+    # Recalculate godownDistribution for original order
+    godown_dist = {}
+    for item in updated_items_for_original:
+        item_godown = order.get('godown', '')
+        if item_godown not in godown_dist:
+            godown_dist[item_godown] = 0
+        godown_dist[item_godown] += item['quantity']
+
+    original_order_update["godownDistribution"] = [
+        {"godown": godown, "readyParcels": parcels}
+        for godown, parcels in godown_dist.items()
+    ]
+
+    await db.orders.update_one({"id": order_id}, {"$set": original_order_update})
+    updated_original = await db.orders.find_one({"id": order_id}, {"_id": 0})
+
+    # Notify admins and accountants about the split order
+    admins = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
+    for admin_user in admins:
+        await create_notification(admin_user['id'],
+            f"Order {order['orderId']} split into 2 orders. Remainder {new_order_display_id} created in {remainder_godown}",
+            "order_created", new_order_id_value)
+
+    accountants = await db.users.find({"role": "accountant"}, {"_id": 0}).to_list(10)
+    for accountant_user in accountants:
+        await create_notification(accountant_user['id'],
+            f"Order {order['orderId']} split into 2 orders. Remainder {new_order_display_id} created in {remainder_godown}",
+            "order_created", new_order_id_value)
+
+    await create_audit_log(user['id'], "SPLIT_ORDER", order_id,
+        f"Order {order['orderId']} split. Remainder: {new_order_display_id}")
+
+    # Broadcast both updated orders
+    await manager.broadcast({"type": "ORDER_UPDATED", "order": updated_original})
+    await manager.broadcast({"type": "ORDER_CREATED", "order": inserted_order})
+
+    return {"success": True, "originalOrder": updated_original, "remainderOrder": inserted_order}
 
 
 @api_router.put("/orders/{order_id}/fulfill")
