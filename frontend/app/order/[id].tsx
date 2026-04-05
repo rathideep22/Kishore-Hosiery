@@ -607,6 +607,39 @@ export default function OrderDetailScreen() {
               </View>
             </View>
 
+            {/* Split Order - visible to all (staff, admin, accountant) when partially filled */}
+            {!order.dispatched && (order.readinessStatus === 'Partial Ready' || order.readinessStatus === 'Pending') && (
+              <TouchableOpacity
+                style={styles.splitBtn}
+                onPress={() => setShowSplitModal(true)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="git-branch" size={20} color="#FFF" />
+                <Text style={styles.splitBtnText}>📌 Split Order</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Download PDF - show if bill exists */}
+            {order.billPdfUrl && (
+              <TouchableOpacity
+                style={styles.downloadPdfBtn}
+                onPress={() => {
+                  const url = order.billPdfUrl!;
+                  if (Platform.OS === 'web') {
+                    window.open(url, '_blank');
+                  } else {
+                    Linking.openURL(url).catch(() => {
+                      Alert.alert('Error', `Could not open PDF. URL: ${url}`);
+                    });
+                  }
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="document-text" size={20} color="#FFF" />
+                <Text style={styles.downloadPdfBtnText}>📄 Download Bill PDF</Text>
+              </TouchableOpacity>
+            )}
+
             {/* Message */}
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>ORDER MESSAGE</Text>
@@ -742,42 +775,6 @@ export default function OrderDetailScreen() {
             </View>
           )}
 
-          {/* Split Order - show for partially filled or pending orders */}
-          {!order.dispatched && (order.readinessStatus === 'Partial Ready' || order.readinessStatus === 'Pending') && (
-            <View style={styles.section}>
-              <TouchableOpacity
-                style={styles.splitBtn}
-                onPress={() => setShowSplitModal(true)}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="git-branch" size={20} color="#FFF" />
-                <Text style={styles.splitBtnText}>Split Order</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Download PDF - show for completed orders */}
-          {order.completed && order.billPdfUrl && (
-            <View style={styles.section}>
-              <TouchableOpacity
-                style={styles.downloadPdfBtn}
-                onPress={() => {
-                  const url = order.billPdfUrl!;
-                  if (Platform.OS === 'web') {
-                    window.open(url, '_blank');
-                  } else {
-                    Linking.openURL(url).catch(() => {
-                      Alert.alert('Error', `Could not open PDF. URL: ${url}`);
-                    });
-                  }
-                }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="document-text" size={22} color="#FFF" />
-                <Text style={styles.downloadPdfBtnText}>Download Bill PDF</Text>
-              </TouchableOpacity>
-            </View>
-          )}
 
           {/* Meta */}
             <View style={styles.meta}>
