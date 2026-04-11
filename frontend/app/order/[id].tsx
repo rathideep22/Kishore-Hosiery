@@ -636,8 +636,8 @@ export default function OrderDetailScreen() {
                 }}
                 activeOpacity={0.7}
               >
-                <Ionicons name="document-text" size={20} color="#FFF" />
-                <Text style={styles.downloadPdfBtnText}>📄 Download Bill PDF</Text>
+                <Ionicons name="document-text" size={14} color="#FFF" />
+                <Text style={styles.downloadPdfBtnText}>Download Bill PDF</Text>
               </TouchableOpacity>
             )}
 
@@ -784,7 +784,7 @@ export default function OrderDetailScreen() {
               onPress={() => setShowSplitModal(true)}
               activeOpacity={0.7}
             >
-              <Ionicons name="git-branch" size={20} color="#FFF" />
+              <Ionicons name="git-branch" size={14} color="#FFF" />
               <Text style={styles.splitBtnText}>Split Order</Text>
             </TouchableOpacity>
           )}
@@ -1323,11 +1323,11 @@ const styles = StyleSheet.create({
   completeBtn: { flexDirection: 'row', backgroundColor: Colors.success, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
   completeBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
   // Download PDF Button
-  downloadPdfBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 12, height: 52, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm },
-  downloadPdfBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
+  downloadPdfBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 999, height: 32, paddingHorizontal: 14, justifyContent: 'center', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: Spacing.sm },
+  downloadPdfBtnText: { color: '#FFF', fontSize: FontSize.xs, fontWeight: '700', letterSpacing: 0.2 },
   // Split Order Button
-  splitBtn: { flexDirection: 'row', backgroundColor: '#000', borderRadius: 12, height: 40, justifyContent: 'center', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.md },
-  splitBtnText: { color: '#FFF', fontSize: FontSize.sm, fontWeight: '700' },
+  splitBtn: { flexDirection: 'row', backgroundColor: '#000', borderRadius: 999, height: 32, justifyContent: 'center', alignItems: 'center', gap: 6, paddingHorizontal: 14, alignSelf: 'flex-start', marginTop: Spacing.sm },
+  splitBtnText: { color: '#FFF', fontSize: FontSize.xs, fontWeight: '700', letterSpacing: 0.2 },
   // Split Modal
   godownOptions: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.xl },
   godownOption: { flex: 1, borderWidth: 2, borderColor: Colors.border, borderRadius: 8, paddingVertical: Spacing.lg, alignItems: 'center' },
