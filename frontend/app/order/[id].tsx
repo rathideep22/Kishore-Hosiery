@@ -796,8 +796,24 @@ export default function OrderDetailScreen() {
       <Modal visible={showEdit} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Text style={[styles.modalTitle, { marginBottom: 0 }]}>Edit Order</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
+              <Text style={[styles.modalTitle, { marginBottom: 0, flex: 1 }]} numberOfLines={1}>Edit Order</Text>
+              <TouchableOpacity
+                testID="edit-save-btn"
+                style={styles.headerSaveBtn}
+                onPress={saveEdit}
+                disabled={actionLoading === 'edit'}
+                activeOpacity={0.8}
+              >
+                {actionLoading === 'edit' ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={16} color={Colors.textInverse} />
+                    <Text style={styles.headerSaveText}>Save</Text>
+                  </>
+                )}
+              </TouchableOpacity>
               <TouchableOpacity testID="edit-close-icon-btn" onPress={() => setShowEdit(false)} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
                 <Ionicons name="close" size={28} color={Colors.text} />
               </TouchableOpacity>
@@ -853,14 +869,14 @@ export default function OrderDetailScreen() {
                         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <Text style={[styles.variantSize, { flex: 1 }]}>{item.size}</Text>
                           <TextInput
-                            style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 6, width: 45, height: 32, fontSize: 13, backgroundColor: Colors.bg, color: Colors.text, textAlign: 'center' }}
+                            style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 6, width: 64, height: 36, fontSize: 14, backgroundColor: Colors.bg, color: Colors.text, textAlign: 'center', paddingHorizontal: 4 }}
                             value={String(item.quantity || '')}
                             onChangeText={(val) => handleEditItemUpdate(catInOrder.category, item.productId, 'quantity', val)}
                             keyboardType="number-pad"
                             placeholder="Qty"
                           />
                           <TextInput
-                            style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 6, width: 55, height: 32, fontSize: 13, backgroundColor: Colors.bg, color: Colors.text, textAlign: 'center' }}
+                            style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 6, width: 76, height: 36, fontSize: 14, backgroundColor: Colors.bg, color: Colors.text, textAlign: 'center', paddingHorizontal: 4 }}
                             value={String(item.rate || '')}
                             onChangeText={(val) => handleEditItemUpdate(catInOrder.category, item.productId, 'rate', val)}
                             keyboardType="decimal-pad"
@@ -894,14 +910,6 @@ export default function OrderDetailScreen() {
             <TextInput testID="edit-message-input" style={[styles.modalInput, { height: 100 }]} value={editMessage} onChangeText={setEditMessage} multiline textAlignVertical="top" />
             <Text style={styles.modalLabel}>TOTAL PARCELS</Text>
             <TextInput testID="edit-parcels-input" style={styles.modalInput} value={editParcels} onChangeText={setEditParcels} keyboardType="number-pad" />
-            <View style={styles.modalActions}>
-              <TouchableOpacity testID="edit-cancel-btn" style={styles.cancelBtn} onPress={() => setShowEdit(false)} activeOpacity={0.7}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity testID="edit-save-btn" style={styles.saveBtn} onPress={saveEdit} disabled={actionLoading === 'edit'} activeOpacity={0.7}>
-                {actionLoading === 'edit' ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveText}>Save</Text>}
-              </TouchableOpacity>
-            </View>
           </ScrollView>
         </View>
       </Modal>
@@ -1145,6 +1153,8 @@ const styles = StyleSheet.create({
   cancelText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textSecondary },
   saveBtn: { flex: 1, backgroundColor: Colors.brand, borderRadius: 12, height: 48, justifyContent: 'center', alignItems: 'center' },
   saveText: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textInverse },
+  headerSaveBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.brand, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, minWidth: 76, justifyContent: 'center' },
+  headerSaveText: { fontSize: 13, fontWeight: '800', color: Colors.textInverse, letterSpacing: 0.3 },
   btnDisabled: { opacity: 0.5 },
   // Category Items
   categoryCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.md },
