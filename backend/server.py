@@ -1142,8 +1142,9 @@ async def import_products(
 
     The file must match the format of ListofItems.xlsx used for seeding:
     Sheet1, data starts at row 4, columns A..D are
-    category | size | printName | alias. Existing aliases are updated,
-    new ones are inserted. Returns a summary of rows processed.
+    category | size | printName | alias. Rows whose alias already exists
+    in the database are left untouched (counted as duplicates); only new
+    aliases are inserted. Returns a summary of rows processed.
     """
     require_admin(user)
 
@@ -1181,10 +1182,19 @@ async def import_products(
         start_row = 1
 
     inserted = 0
-    updated = 0
+    duplicates = 0
     skipped = 0
     errors: List[str] = []
     now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Snapshot the existing aliases up-front so we don't hit the DB once per
+    # row. The catalog is small enough (a few hundred entries) that holding
+    # the set in memory is cheap and saves O(N) round-trips on big imports.
+    existing_alias_set = {
+        doc["alias"]
+        for doc in await db.products.find({}, {"_id": 0, "alias": 1}).to_list(length=None)
+        if doc.get("alias")
+    }
 
     for row_idx in range(start_row, ws.max_row + 1):
         category = ws.cell(row_idx, 1).value
@@ -1206,30 +1216,25 @@ async def import_products(
             skipped += 1
             continue
 
+        # If the alias already lives in the catalog, leave it alone — the
+        # admin asked us not to overwrite existing products. Track it as a
+        # duplicate so the import summary still tells them what we saw.
+        if alias_s in existing_alias_set:
+            duplicates += 1
+            continue
+
         try:
-            existing = await db.products.find_one({"alias": alias_s})
-            if existing:
-                await db.products.update_one(
-                    {"alias": alias_s},
-                    {"$set": {
-                        "category": category_s,
-                        "size": size_s,
-                        "printName": print_name_s,
-                        "updatedAt": now_iso,
-                    }},
-                )
-                updated += 1
-            else:
-                await db.products.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "category": category_s,
-                    "size": size_s,
-                    "printName": print_name_s,
-                    "alias": alias_s,
-                    "createdAt": now_iso,
-                    "updatedAt": now_iso,
-                })
-                inserted += 1
+            await db.products.insert_one({
+                "id": str(uuid.uuid4()),
+                "category": category_s,
+                "size": size_s,
+                "printName": print_name_s,
+                "alias": alias_s,
+                "createdAt": now_iso,
+                "updatedAt": now_iso,
+            })
+            existing_alias_set.add(alias_s)
+            inserted += 1
         except Exception as e:
             errors.append(f"Row {row_idx} ({alias_s}): {e}")
 
@@ -1237,11 +1242,11 @@ async def import_products(
         user['id'],
         "PRODUCTS_IMPORTED",
         None,
-        f"Imported products from {file.filename}: {inserted} new, {updated} updated, {skipped} skipped",
+        f"Imported products from {file.filename}: {inserted} new, {duplicates} duplicates, {skipped} skipped",
     )
     return {
         "inserted": inserted,
-        "updated": updated,
+        "duplicates": duplicates,
         "skipped": skipped,
         "errors": errors[:20],
     }
