@@ -4,10 +4,12 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson.objectid import ObjectId
 import os
+import re
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
+from urllib.parse import unquote
 import uuid
 from datetime import datetime, timezone, timedelta
 import jwt
@@ -137,6 +139,76 @@ class ConnectionManager:
                 self.disconnect(user_id)
 
 manager = ConnectionManager()
+
+
+# ─── PDF Regeneration Helpers ────────────────────────────────────────────────
+
+# Order states in which the PDF bill is meaningful and should be kept fresh.
+# Pending / Partial Ready are excluded because the data is incomplete.
+PDF_ELIGIBLE_STATUSES = {"Ready", "Completed", "Bill Generated"}
+
+
+def _derive_pdf_filename(order: dict) -> str:
+    """Return the S3 filename (without extension) for this order's PDF.
+
+    If the order already has a billPdfUrl, we reuse the same filename so
+    the regeneration overwrites the existing S3 key — keeping one PDF per
+    order instead of accumulating dated duplicates. First-time generation
+    uses the current UTC date.
+    """
+    party_name = order.get('partyName') or 'Order'
+    existing_url = order.get('billPdfUrl')
+    if existing_url:
+        match = re.search(r'/bills/(.+?)\.pdf', existing_url)
+        if match:
+            return unquote(match.group(1))
+    pdf_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    return f"{party_name} ({pdf_date})"
+
+
+async def regenerate_order_pdf(order: dict) -> Optional[str]:
+    """Regenerate the PDF bill for an order and upload it to S3.
+
+    Runs the synchronous PDF + S3 work in a threadpool to keep the
+    FastAPI event loop responsive. Returns the new PDF URL, or None if
+    the order is not in a PDF-eligible state or generation failed.
+    """
+    status = order.get('readinessStatus', 'Pending')
+    if status not in PDF_ELIGIBLE_STATUSES:
+        return None
+    try:
+        filename = _derive_pdf_filename(order)
+        generator = OrderPDFGenerator()
+        url = await asyncio.to_thread(
+            generator.generate_order_bill, order, filename
+        )
+        logging.info(
+            f"PDF regenerated for order {order.get('orderId')} [{status}]: {url}"
+        )
+        return url
+    except Exception as e:
+        logging.error(
+            f"Failed to regenerate PDF for order {order.get('orderId')}: {e}",
+            exc_info=True,
+        )
+        return None
+
+
+async def refresh_pdf_for_order(order: dict) -> dict:
+    """Regenerate the PDF for the given order and persist billPdfUrl.
+
+    Mutates and returns the supplied order dict so callers can broadcast
+    the latest state without an extra DB read. No-op for orders whose
+    status isn't PDF-eligible.
+    """
+    pdf_url = await regenerate_order_pdf(order)
+    if pdf_url:
+        await db.orders.update_one(
+            {"id": order["id"]},
+            {"$set": {"billPdfUrl": pdf_url}},
+        )
+        order['billPdfUrl'] = pdf_url
+    return order
 
 
 # ─── Auth Helpers ─────────────────────────────────────────────────────────────
@@ -434,6 +506,7 @@ async def update_order(order_id: str, req: UpdateOrderRequest, user: dict = Depe
             update["readinessStatus"] = "Pending"
     await db.orders.update_one({"id": order_id}, {"$set": update})
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    updated = await refresh_pdf_for_order(updated)
     await create_audit_log(user['id'], "ORDER_UPDATED", order_id, f"Updated order {order['orderId']}")
     await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
     return updated
@@ -452,6 +525,7 @@ async def update_bill(order_id: str, req: UpdateBillRequest, user: dict = Depend
     }
     await db.orders.update_one({"id": order_id}, {"$set": update})
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    updated = await refresh_pdf_for_order(updated)
 
     # Notify admins when accountant adds a bill
     if user.get('role') == 'accountant':
@@ -476,30 +550,16 @@ async def complete_order(order_id: str, user: dict = Depends(get_auth_user)):
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    # Generate PDF and upload to S3
-    pdf_url = None
-    try:
-        logging.info(f"🔄 Starting PDF generation for order {order_id}")
-        pdf_generator = OrderPDFGenerator()
-        pdf_url = pdf_generator.generate_order_bill(order)
-        logging.info(f"✅ PDF generated successfully: {pdf_url}")
-    except Exception as e:
-        logging.error(f"❌ Error generating PDF for order {order_id}: {str(e)}", exc_info=True)
-        # Continue with order completion even if PDF generation fails
-
     update = {
         "completed": True,
         "readinessStatus": "Completed",
         "completedAt": datetime.now(timezone.utc).isoformat(),
-        "updatedAt": datetime.now(timezone.utc).isoformat()
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
     }
-
-    # Add PDF URL if generation was successful
-    if pdf_url:
-        update["billPdfUrl"] = pdf_url
 
     await db.orders.update_one({"id": order_id}, {"$set": update})
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    updated = await refresh_pdf_for_order(updated)
     await create_audit_log(user['id'], "ORDER_COMPLETED", order_id, f"Completed order {order['orderId']}")
 
     # Notify all users about order completion
@@ -583,6 +643,7 @@ async def update_godown(order_id: str, req: GodownUpdateRequest, user: dict = De
         "updatedAt": datetime.now(timezone.utc).isoformat()
     }})
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    updated = await refresh_pdf_for_order(updated)
     await create_audit_log(user['id'], "GODOWN_UPDATED", order_id,
         f"Godown {req.godown}: {req.readyParcels} parcels for {order['orderId']}")
     if readiness == "Ready":
@@ -620,6 +681,7 @@ async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(
 
     await db.orders.update_one({"id": order_id}, {"$set": update_data})
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    updated = await refresh_pdf_for_order(updated)
 
     await create_audit_log(user['id'], "DISPATCH_UPDATED", order_id,
         f"Order {order['orderId']} {'dispatched' if new_val else 'un-dispatched'}")
@@ -767,32 +829,9 @@ async def split_order(order_id: str, req: Request, user: dict = Depends(get_auth
         for godown, parcels in godown_dist.items()
     ]
 
-    # If original order is transitioning to Ready and has no PDF yet, generate it
-    old_original_status = order.get('readinessStatus', 'Pending')
-    if (new_original_status == "Ready"
-            and old_original_status != "Ready"
-            and not order.get('billPdfUrl')):
-        try:
-            logging.info(f"🔄 Generating PDF for split original order {order_id} reaching Ready")
-            pdf_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-            custom_filename = f"{order.get('partyName', 'Order')} ({pdf_date})"
-
-            # Build order snapshot with updated items for PDF
-            order_for_pdf = {
-                **order,
-                'items': updated_items_for_original,
-                'totalParcels': total_fulfilled_in_original,
-                'readinessStatus': new_original_status,
-            }
-            pdf_generator = OrderPDFGenerator()
-            pdf_url = pdf_generator.generate_order_bill(order_for_pdf, custom_filename)
-            original_order_update["billPdfUrl"] = pdf_url
-            logging.info(f"✅ PDF generated for split order: {pdf_url}")
-        except Exception as e:
-            logging.error(f"❌ Error generating PDF for split order {order_id}: {str(e)}", exc_info=True)
-
     await db.orders.update_one({"id": order_id}, {"$set": original_order_update})
     updated_original = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    updated_original = await refresh_pdf_for_order(updated_original)
 
     # Notify admins and accountants about the split order
     admins = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
@@ -886,42 +925,19 @@ async def fulfill_parcel(order_id: str, req: ParcelFulfillmentRequest, user: dic
     elif fulfilled_count > 0:
         new_status = "Partial Ready"
 
-    # Check if order is transitioning to "Ready" status
-    old_status = order.get('readinessStatus', 'Pending')
-    is_becoming_ready = old_status != "Ready" and new_status == "Ready"
-
-    # If becoming ready and no PDF yet, generate PDF with custom filename
     update_dict = {
         "items": updated_items,
         "readinessStatus": new_status,
         "updatedAt": datetime.now(timezone.utc).isoformat()
     }
 
-    if is_becoming_ready and not order.get('billPdfUrl'):
-        try:
-            logging.info(f"🔄 Generating PDF for order {order_id} reaching Ready status")
-            # Format: "Party name (date)" e.g., "Acme Corp (2026-04-05)"
-            pdf_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-            custom_filename = f"{order.get('partyName', 'Order')} ({pdf_date})"
-
-            # Create order data with updated items for PDF generation
-            order_for_pdf = {**order, 'items': updated_items}
-            pdf_generator = OrderPDFGenerator()
-            pdf_url = pdf_generator.generate_order_bill(order_for_pdf, custom_filename)
-            update_dict["billPdfUrl"] = pdf_url
-            logging.info(f"✅ PDF generated successfully for order: {pdf_url}")
-        except Exception as e:
-            logging.error(f"❌ Error generating PDF for order {order_id}: {str(e)}", exc_info=True)
-            # Continue with order update even if PDF generation fails
-
-    # Update order with new items and status using the _id we found
     await db.orders.update_one(
         {"_id": order["_id"]},
         {"$set": update_dict}
     )
 
-    # Re-fetch for return and broadcast
     updated = await db.orders.find_one({"_id": order["_id"]}, {"_id": 0})
+    updated = await refresh_pdf_for_order(updated)
     await create_audit_log(user['id'], "PARCEL_FULFILLED", order_id,
         f"Parcel {req.parcelIndex + 1} for {req.productId} fulfilled with {req.weight}kg")
     await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
