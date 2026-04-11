@@ -76,6 +76,10 @@ export function OrderFulfillment({
   const [tableViewCategory, setTableViewCategory] = useState<string | null>(null);
   const debounceTimersRef = useRef<Record<string, any>>({});
   const lastSubmittedRef = useRef<Record<string, string>>({});
+  // Mirrors the items prop so async callbacks (submitFulfillment, timers)
+  // can always see the freshest fulfillment state without being re-created.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const weightInputRef = useRef<TextInput>(null);
   const serialInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -115,8 +119,32 @@ export function OrderFulfillment({
   const submitFulfillment = useCallback(async (productId: string, parcelIndex: number, weight: string | null, serialNo: string | null) => {
     if (!orderId) { Alert.alert('Error', 'Order ID is missing'); return; }
     const key = `${productId}-${parcelIndex}`;
+
+    // Close the entry panel when every parcel of every item has a weight.
+    // Runs regardless of auto-advance setting so the user isn't stranded
+    // on the last parcel, and runs even on the dedupe path (below) so
+    // pressing Save after auto-save still dismisses the panel.
+    const closeIfAllDone = (allItems: OrderItem[]): boolean => {
+      const done = allItems.every((it: OrderItem) => {
+        const filled = (it.fulfillment || []).filter((w: any) => w !== null && w !== undefined).length;
+        return filled >= it.quantity;
+      });
+      if (!done) return false;
+      Object.values(autoAdvanceTimersRef.current).forEach(t => clearTimeout(t));
+      autoAdvanceTimersRef.current = {};
+      setInputValues(prev => { const u = { ...prev }; delete u[key]; return u; });
+      setSerialValues(prev => { const u = { ...prev }; delete u[key]; return u; });
+      setActiveSlot(null);
+      return true;
+    };
+
     const submittedValue = `${weight || ''}|${serialNo || ''}`;
-    if (lastSubmittedRef.current[key] === submittedValue) return;
+    if (lastSubmittedRef.current[key] === submittedValue) {
+      // Same value already saved — no server call needed, but still
+      // dismiss the panel if the order is complete.
+      closeIfAllDone(itemsRef.current);
+      return;
+    }
     lastSubmittedRef.current[key] = submittedValue;
     setSaving(key);
     try {
@@ -133,7 +161,9 @@ export function OrderFulfillment({
       const response = await api.put(`/orders/${orderId}/fulfill`, payload);
       if (response.items) {
         onUpdate(response.items);
-        
+
+        if (closeIfAllDone(response.items)) return;
+
         // Find the updated item in the response
         const updatedItem = response.items.find((i: any) => i.productId === productId);
         if (updatedItem) {
