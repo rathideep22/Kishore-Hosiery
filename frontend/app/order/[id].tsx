@@ -712,8 +712,8 @@ export default function OrderDetailScreen() {
              </View>
           )}
 
-          {/* Bill No Section - for dispatched orders, visible to admin and accountant */}
-          {order.dispatched && (isAdmin || isAccountant) && (
+          {/* Bill No Section - once the order is Ready (or later) admins & accountants can enter/edit the bill */}
+          {!['Pending', 'Partial Ready'].includes(order.readinessStatus) && (isAdmin || isAccountant) && (
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>BILL NUMBER</Text>
               {order.billNo && !editingBill ? (

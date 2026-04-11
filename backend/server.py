@@ -1136,15 +1136,18 @@ async def get_dashboard_stats(user: dict = Depends(get_auth_user)):
             "completed": completed,
         }
     elif user_role == 'accountant':
-        # Accountant: active = dispatched orders without bill
-        dispatched_no_bill = await db.orders.count_documents({
-            **non_completed, "dispatched": True,
-            "$or": [{"billNo": None}, {"billNo": {"$exists": False}}, {"billNo": ""}]
+        # Accountant: needs-bill = orders that are Ready or dispatched and have no bill number yet
+        needs_bill = await db.orders.count_documents({
+            **non_completed,
+            "$and": [
+                {"$or": [{"readinessStatus": "Ready"}, {"dispatched": True}]},
+                {"$or": [{"billNo": None}, {"billNo": {"$exists": False}}, {"billNo": ""}]},
+            ],
         })
         bill_generated = await db.orders.count_documents({**non_completed, "readinessStatus": "Bill Generated"})
         return {
-            "totalActive": dispatched_no_bill,
-            "needsBill": dispatched_no_bill,
+            "totalActive": needs_bill,
+            "needsBill": needs_bill,
             "billGenerated": bill_generated,
         }
     else:
