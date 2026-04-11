@@ -31,6 +31,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [wsMessage, setWsMessage] = useState<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const userRef = useRef<User | null>(null);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   useEffect(() => {
     loadAuth();
@@ -136,7 +141,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setWsMessage(data);
         if (data.type === 'NOTIFICATION') {
           setUnreadCount(prev => prev + 1);
-          // Play notification sound
+          playNotificationSound();
+        } else if (data.type === 'ORDER_CREATED' && data.order?.createdBy !== userRef.current?.id) {
+          // Every connected device hears a chime for new orders (except the creator's own device).
           playNotificationSound();
         }
       } catch {}

@@ -114,29 +114,45 @@ class ParcelFulfillmentRequest(BaseModel):
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
+        # One user may have several live sockets (phone + tablet + web),
+        # so we keep a list per user_id instead of a single socket. A bare
+        # dict[user_id] = socket would let the newest device silently
+        # replace older ones — the original cause of the "sound only on
+        # the host phone" bug.
+        self.active_connections: Dict[str, List[WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket, user_id: str):
         await websocket.accept()
-        self.active_connections[user_id] = websocket
+        self.active_connections.setdefault(user_id, []).append(websocket)
 
-    def disconnect(self, user_id: str):
-        self.active_connections.pop(user_id, None)
+    def disconnect(self, user_id: str, websocket: Optional[WebSocket] = None):
+        sockets = self.active_connections.get(user_id)
+        if not sockets:
+            return
+        if websocket is None:
+            self.active_connections.pop(user_id, None)
+            return
+        try:
+            sockets.remove(websocket)
+        except ValueError:
+            pass
+        if not sockets:
+            self.active_connections.pop(user_id, None)
 
     async def broadcast(self, message: dict):
-        for uid, conn in list(self.active_connections.items()):
-            try:
-                await conn.send_json(message)
-            except Exception:
-                self.disconnect(uid)
+        for uid, sockets in list(self.active_connections.items()):
+            for conn in list(sockets):
+                try:
+                    await conn.send_json(message)
+                except Exception:
+                    self.disconnect(uid, conn)
 
     async def send_to_user(self, user_id: str, message: dict):
-        conn = self.active_connections.get(user_id)
-        if conn:
+        for conn in list(self.active_connections.get(user_id, [])):
             try:
                 await conn.send_json(message)
             except Exception:
-                self.disconnect(user_id)
+                self.disconnect(user_id, conn)
 
 manager = ConnectionManager()
 
@@ -456,11 +472,15 @@ async def create_order(req: CreateOrderRequest, user: dict = Depends(get_auth_us
     }
     await db.orders.insert_one({**order})
 
-    # Notify all staff
-    staff_users = await db.users.find({"role": "staff"}, {"_id": 0}).to_list(100)
-    for staff in staff_users:
+    # Notify every staff / admin / accountant (except the creator) so their
+    # phones chime. We skip the creator so they don't hear their own order.
+    recipients = await db.users.find(
+        {"role": {"$in": ["staff", "admin", "accountant"]}, "id": {"$ne": user['id']}},
+        {"_id": 0},
+    ).to_list(500)
+    for recipient in recipients:
         await create_notification(
-            staff['id'],
+            recipient['id'],
             f"New Order {order['orderId']} for {order['partyName']}",
             "new_order",
             order['id']
@@ -1208,10 +1228,10 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query("")):
             if data == "ping":
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
-        manager.disconnect(user['id'])
+        manager.disconnect(user['id'], websocket)
     except Exception as e:
         logger.error(f"WebSocket error for user {user['id']}: {str(e)}")
-        manager.disconnect(user['id'])
+        manager.disconnect(user['id'], websocket)
 
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
