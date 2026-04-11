@@ -11,6 +11,7 @@ import { SearchInput } from '../../src/components/SearchInput';
 import { useResponsive } from '../../src/utils/responsive';
 import { getResponsiveTheme } from '../../src/constants/responsiveTheme';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
+import { useAutoAdvancePref } from '../../src/hooks/useAutoAdvancePref';
 
 interface Product {
   id: string;
@@ -57,8 +58,12 @@ export default function CreateOrderScreen() {
   const { width } = useWindowDimensions();
   const isNarrow = width < 420;
 
-  const [enableAutoAdvance, setEnableAutoAdvance] = useState(true);
-  const [autoAdvanceDelay, setAutoAdvanceDelay] = useState(2000); // 2 seconds default
+  const {
+    enabled: enableAutoAdvance,
+    delay: autoAdvanceDelay,
+    setEnabled: setEnableAutoAdvance,
+    setDelay: setAutoAdvanceDelay,
+  } = useAutoAdvancePref();
 
   const [partyName, setPartyName] = useState('');
   const [location, setLocation] = useState('');

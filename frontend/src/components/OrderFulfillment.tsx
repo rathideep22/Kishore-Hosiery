@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { api } from '../utils/api';
 import { Colors, FontSize, Spacing } from '../constants/theme';
 import { useResponsive } from '../utils/responsive';
+import { useAutoAdvancePref } from '../hooks/useAutoAdvancePref';
 
 interface OrderItem {
   productId: string;
@@ -60,8 +61,12 @@ export function OrderFulfillment({
   const [saving, setSaving] = useState<string | null>(null);
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
   const [serialValues, setSerialValues] = useState<Record<string, string>>({});
-  const [enableAutoAdvance, setEnableAutoAdvance] = useState(true);
-  const [autoAdvanceDelay, setAutoAdvanceDelay] = useState(2000);
+  const {
+    enabled: enableAutoAdvance,
+    delay: autoAdvanceDelay,
+    setEnabled: setEnableAutoAdvance,
+    setDelay: setAutoAdvanceDelay,
+  } = useAutoAdvancePref();
   // Active slot = {productId, parcelIndex} — the one being typed into
   const [activeSlot, setActiveSlot] = useState<{ productId: string; parcelIndex: number } | null>(null);
   const latestSerialsRef = useRef<Record<string, string>>({});
