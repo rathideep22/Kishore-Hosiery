@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  Modal, Alert, ActivityIndicator, ScrollView, useWindowDimensions, Switch
+  Modal, Alert, ActivityIndicator, ScrollView, useWindowDimensions, Switch, Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,13 @@ import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
 import { useResponsive } from '../../src/utils/responsive';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
+
+// RN-Web maps TextInput to a real <input>, which inherits the browser's
+// yellow focus ring. RN's TextStyle types don't expose `outlineStyle`,
+// so we keep this off the StyleSheet and merge it in at the call site.
+const webNoFocusRing = Platform.OS === 'web'
+  ? ({ outlineStyle: 'none', outlineWidth: 0 } as any)
+  : null;
 
 interface Product {
   id: string;
@@ -115,20 +122,39 @@ export default function CatalogScreen() {
       const asset = pick.assets[0];
 
       const form = new FormData();
-      // React Native's FormData file shape is { uri, name, type }.
-      // Cast to any because TS lib.dom expects a Blob here.
-      form.append('file', {
-        uri: asset.uri,
-        name: asset.name || 'items.xlsx',
-        type: asset.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      } as any);
+      const filename = asset.name || 'items.xlsx';
+      const mime =
+        asset.mimeType ||
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+      if (Platform.OS === 'web') {
+        // expo-document-picker on web exposes the actual File via `asset.file`,
+        // but on older runtimes it only gives a blob: URI. Fetching the URI
+        // works in either case and yields a real Blob the browser FormData
+        // can serialise as a multipart upload.
+        const webFile = (asset as any).file as File | undefined;
+        if (webFile) {
+          form.append('file', webFile, filename);
+        } else {
+          const blob = await (await fetch(asset.uri)).blob();
+          form.append('file', blob, filename);
+        }
+      } else {
+        // React Native's FormData file shape is { uri, name, type }.
+        // Cast to any because TS lib.dom expects a Blob here.
+        form.append('file', {
+          uri: asset.uri,
+          name: filename,
+          type: mime,
+        } as any);
+      }
 
       setImporting(true);
       const result = await api.post('/products/import', form);
       await fetchProducts();
       Alert.alert(
         'Import complete',
-        `${result.inserted} new · ${result.updated} updated · ${result.skipped} skipped` +
+        `${result.inserted} new · ${result.duplicates} already in catalog · ${result.skipped} skipped` +
           (result.errors?.length ? `\n\nErrors:\n${result.errors.join('\n')}` : ''),
       );
     } catch (e: any) {
@@ -315,28 +341,35 @@ export default function CatalogScreen() {
         }}
         activeOpacity={0.7}
       >
+        <View style={styles.categoryIconWrap}>
+          <Ionicons name="cube" size={20} color={Colors.brand} />
+        </View>
         <View style={styles.categoryCardLeft}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={styles.categoryName}>{item.name}</Text>
+          <Text style={styles.categoryName} numberOfLines={2}>{item.name}</Text>
+          <View style={styles.categoryMeta}>
+            <Text style={styles.variantCount}>
+              {variantCount} variant{variantCount !== 1 ? 's' : ''}
+            </Text>
             {item.requireSerialNo && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.brand + '18', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 }}>
-                <Ionicons name="barcode-outline" size={12} color={Colors.brand} />
-                <Text style={{ fontSize: 10, color: Colors.brand, fontWeight: '700', marginLeft: 3 }}>S/N</Text>
+              <View style={styles.snBadge}>
+                <Ionicons name="barcode" size={10} color={Colors.brand} />
+                <Text style={styles.snBadgeText}>S/N</Text>
               </View>
             )}
           </View>
-          <Text style={styles.variantCount}>{variantCount} variant{variantCount !== 1 ? 's' : ''}</Text>
         </View>
         <View style={styles.categoryCardRight}>
-          <TouchableOpacity
-            onPress={() => openEditCategoryModal(item)}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            activeOpacity={0.7}
-            style={{ padding: 6, marginRight: 4 }}
-          >
-            <Ionicons name="pencil" size={18} color={Colors.info} />
-          </TouchableOpacity>
-          <Ionicons name="chevron-forward" size={24} color={Colors.brand} />
+          {isAdmin && (
+            <TouchableOpacity
+              onPress={() => openEditCategoryModal(item)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.7}
+              style={styles.cardIconBtn}
+            >
+              <Ionicons name="pencil-outline" size={16} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+          <Ionicons name="chevron-forward" size={18} color={Colors.textSecondary} />
         </View>
       </TouchableOpacity>
     );
@@ -459,7 +492,7 @@ export default function CatalogScreen() {
 
                 <Text style={styles.fieldLabel}>Size *</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, webNoFocusRing]}
                   placeholder="e.g., 12-9, 12-12"
                   placeholderTextColor={Colors.textSecondary}
                   value={formData.size}
@@ -468,7 +501,7 @@ export default function CatalogScreen() {
 
                 <Text style={styles.fieldLabel}>Alias (Code) *</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, webNoFocusRing]}
                   placeholder="e.g., 22101"
                   placeholderTextColor={Colors.textSecondary}
                   value={formData.alias}
@@ -477,7 +510,7 @@ export default function CatalogScreen() {
 
                 <Text style={styles.fieldLabel}>Print Name *</Text>
                 <TextInput
-                  style={[styles.input, styles.multilineInput]}
+                  style={[styles.input, styles.multilineInput, webNoFocusRing]}
                   placeholder="e.g., 0 FILLER 160 GSM KOH YELLOW 12-9"
                   placeholderTextColor={Colors.textSecondary}
                   value={formData.printName}
@@ -645,22 +678,25 @@ export default function CatalogScreen() {
     <SafeAreaView style={styles.safe}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerTitleBlock}>
           <Text style={styles.title}>Product Catalog</Text>
-          <Text style={styles.subtitle}>{getCategories().length} categories</Text>
+          <Text style={styles.subtitle}>
+            {getCategories().length} {getCategories().length === 1 ? 'category' : 'categories'}
+          </Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>
+        <View style={styles.headerActionsRow}>
           {isAdmin && (
             <TouchableOpacity
               onPress={handleImportExcel}
               activeOpacity={0.7}
               disabled={importing}
               testID="catalog-import-btn"
+              style={styles.headerBtn}
             >
               {importing ? (
                 <ActivityIndicator size="small" color={Colors.brand} />
               ) : (
-                <Ionicons name="cloud-upload-outline" size={26} color={Colors.brand} />
+                <Ionicons name="cloud-upload-outline" size={20} color={Colors.brand} />
               )}
             </TouchableOpacity>
           )}
@@ -670,8 +706,9 @@ export default function CatalogScreen() {
               setShowAddCategoryModal(true);
             }}
             activeOpacity={0.7}
+            style={[styles.headerBtn, styles.headerBtnPrimary]}
           >
-            <Ionicons name="add-circle" size={28} color={Colors.success} />
+            <Ionicons name="add" size={22} color={Colors.textInverse} />
           </TouchableOpacity>
         </View>
       </View>
@@ -680,7 +717,7 @@ export default function CatalogScreen() {
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color={Colors.textSecondary} style={styles.searchIcon} />
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, webNoFocusRing]}
           placeholder="Search by category name..."
           placeholderTextColor={Colors.textSecondary}
           value={search}
@@ -726,7 +763,7 @@ export default function CatalogScreen() {
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <Text style={styles.fieldLabel}>Category Name *</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, webNoFocusRing]}
                 placeholder="e.g., 160 GSM SUPER STRONG YELLOW"
                 placeholderTextColor={Colors.textSecondary}
                 value={newCategory}
@@ -747,7 +784,7 @@ export default function CatalogScreen() {
                   style={[styles.btn, styles.btnPrimary]}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.btnText, styles.btnPrimaryText]}>Create & Add Variant</Text>
+                  <Text style={[styles.btnText, styles.btnPrimaryText]} numberOfLines={1}>Continue</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -768,7 +805,7 @@ export default function CatalogScreen() {
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <Text style={styles.fieldLabel}>Category Name</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, webNoFocusRing]}
                 value={editCategoryName}
                 onChangeText={setEditCategoryName}
                 placeholder="Category name"
@@ -821,62 +858,149 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    gap: Spacing.xs,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
+    gap: Spacing.md,
   },
-  title: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, flex: 1 },
-  subtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  headerTitleBlock: { flex: 1, minWidth: 0 },
+  title: {
+    fontSize: FontSize.xl,
+    fontWeight: '800',
+    color: Colors.text,
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  headerActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    flexShrink: 0,
+  },
+  headerBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: Colors.bgSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  headerBtnPrimary: {
+    backgroundColor: Colors.brand,
+    borderColor: Colors.brand,
+  },
 
   // Search
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: Spacing.md,
-    marginVertical: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
     paddingHorizontal: Spacing.md,
-    height: 44,
-    backgroundColor: Colors.surface,
-    borderWidth: 1.5,
+    height: 48,
+    backgroundColor: Colors.bgSecondary,
+    borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderRadius: 12,
   },
   searchIcon: {
-    marginRight: Spacing.xs,
+    marginRight: Spacing.sm,
   },
   searchInput: {
     flex: 1,
-    fontSize: FontSize.sm,
+    fontSize: FontSize.md,
     color: Colors.text,
     padding: 0,
   },
 
   // Categories
-  categoriesList: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.md, gap: Spacing.xs },
+  categoriesList: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xl,
+    gap: Spacing.sm,
+  },
   categoryCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.bg,
     borderWidth: 1,
     borderColor: Colors.border,
+    borderRadius: 14,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    gap: Spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  categoryIconWrap: {
+    width: 40,
+    height: 40,
     borderRadius: 10,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.sm,
-    marginBottom: 0,
-    gap: Spacing.xs,
+    backgroundColor: Colors.bgSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   categoryCardLeft: { flex: 1, minWidth: 0 },
-  categoryName: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text },
-  variantCount: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
-  categoryCardRight: { marginLeft: Spacing.xs, flexShrink: 0 },
+  categoryName: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    color: Colors.text,
+    letterSpacing: -0.2,
+    lineHeight: 19,
+  },
+  categoryMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: 4,
+  },
+  variantCount: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  snBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.bgSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  snBadgeText: {
+    fontSize: 10,
+    color: Colors.brand,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  categoryCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginLeft: Spacing.xs,
+    flexShrink: 0,
+  },
+  cardIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 
   // Variants
   variantHeader: {
@@ -920,41 +1044,80 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: FontSize.md, color: Colors.textSecondary, marginTop: Spacing.lg },
 
   // Modal
-  modal: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  modalContent: {
+  modal: {
     flex: 1,
-    backgroundColor: Colors.bg,
-    marginTop: 'auto',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.lg,
-    maxHeight: '90%',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
   },
-  modalScroll: { flex: 1 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg },
-  modalTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text },
-  fieldLabel: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, marginBottom: Spacing.sm, marginTop: Spacing.md },
-  readOnlyField: { backgroundColor: Colors.bgSecondary, borderRadius: 8, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, marginBottom: Spacing.md },
+  modalContent: {
+    backgroundColor: Colors.bg,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xl,
+    maxHeight: '90%',
+    width: '100%',
+    alignSelf: 'center',
+    maxWidth: 480,
+  },
+  modalScroll: {},
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  modalTitle: {
+    fontSize: FontSize.xl,
+    fontWeight: '800',
+    color: Colors.text,
+    letterSpacing: -0.4,
+  },
+  fieldLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  readOnlyField: {
+    backgroundColor: Colors.bgSecondary,
+    borderRadius: 10,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
   readOnlyText: { fontSize: FontSize.md, color: Colors.text, fontWeight: '600' },
   input: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.border,
-    borderRadius: 8,
-    paddingHorizontal: Spacing.lg,
+    borderRadius: 12,
+    paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
     fontSize: FontSize.md,
     color: Colors.text,
     backgroundColor: Colors.surface,
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   multilineInput: { height: 100, textAlignVertical: 'top' },
-  modalActions: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xl, marginBottom: Spacing.lg },
-  btn: { flex: 1, borderRadius: 8, paddingVertical: Spacing.md, alignItems: 'center', justifyContent: 'center' },
-  btnPrimary: { backgroundColor: Colors.success },
-  btnSecondary: { backgroundColor: Colors.bgSecondary, borderWidth: 1, borderColor: Colors.border },
+  modalActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.lg,
+  },
+  btn: {
+    flex: 1,
+    borderRadius: 12,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  btnPrimary: { backgroundColor: Colors.brand },
+  btnSecondary: { backgroundColor: Colors.bgSecondary },
   btnText: { fontSize: FontSize.md, fontWeight: '700' },
-  btnPrimaryText: { color: '#FFF' },
+  btnPrimaryText: { color: Colors.textInverse },
   btnSecondaryText: { color: Colors.text },
 
   // Delete Modal
