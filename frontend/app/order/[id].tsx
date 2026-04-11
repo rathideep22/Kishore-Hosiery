@@ -618,7 +618,14 @@ export default function OrderDetailScreen() {
               <TouchableOpacity
                 style={styles.downloadPdfBtn}
                 onPress={() => {
-                  const url = order.billPdfUrl!;
+                  const base = order.billPdfUrl!;
+                  // Cache-bust the S3 URL so PDF viewers re-fetch when the
+                  // bill is regenerated. The S3 key is reused on every
+                  // regeneration to avoid duplicates, so without a fresh
+                  // query string Android caches the previous file.
+                  const buster = encodeURIComponent(order.updatedAt || String(Date.now()));
+                  const sep = base.includes('?') ? '&' : '?';
+                  const url = `${base}${sep}v=${buster}`;
                   if (Platform.OS === 'web') {
                     window.open(url, '_blank');
                   } else {
@@ -851,8 +858,8 @@ export default function OrderDetailScreen() {
               editCategoriesInOrder.map((catInOrder, catIdx) => (
                 <View key={catIdx} style={styles.categoryCard}>
                   <View style={styles.categoryCardHeader}>
-                    <View>
-                      <Text style={styles.categoryName}>{catInOrder.category}</Text>
+                    <View style={{ flex: 1, marginRight: 8, minWidth: 0 }}>
+                      <Text style={styles.categoryName} numberOfLines={3}>{catInOrder.category}</Text>
                       {catInOrder.categoryRate && <Text style={styles.categoryRateTag}>Rate: ₹{catInOrder.categoryRate}</Text>}
                     </View>
                     <TouchableOpacity
@@ -865,31 +872,42 @@ export default function OrderDetailScreen() {
                   </View>
                   <View style={styles.variantsList}>
                     {catInOrder.items.map((item: OrderItem, idx: number) => (
-                      <View key={idx} style={styles.variantItemRow}>
-                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={[styles.variantSize, { flex: 1 }]}>{item.size}</Text>
-                          <TextInput
-                            style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 6, width: 64, height: 36, fontSize: 14, backgroundColor: Colors.bg, color: Colors.text, textAlign: 'center', paddingHorizontal: 4 }}
-                            value={String(item.quantity || '')}
-                            onChangeText={(val) => handleEditItemUpdate(catInOrder.category, item.productId, 'quantity', val)}
-                            keyboardType="number-pad"
-                            placeholder="Qty"
-                          />
-                          <TextInput
-                            style={{ borderWidth: 1, borderColor: Colors.border, borderRadius: 6, width: 76, height: 36, fontSize: 14, backgroundColor: Colors.bg, color: Colors.text, textAlign: 'center', paddingHorizontal: 4 }}
-                            value={String(item.rate || '')}
-                            onChangeText={(val) => handleEditItemUpdate(catInOrder.category, item.productId, 'rate', val)}
-                            keyboardType="decimal-pad"
-                            placeholder="Rate"
-                          />
+                      <View key={idx} style={styles.variantItemCard}>
+                        <View style={styles.variantItemTopRow}>
+                          <Text style={styles.variantItemSize} numberOfLines={1}>{item.size}</Text>
+                          <TouchableOpacity
+                            onPress={() => handleEditRemoveVariant(catInOrder.category, item.productId)}
+                            style={{ padding: 4 }}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+                          </TouchableOpacity>
                         </View>
-                        <TouchableOpacity
-                          onPress={() => handleEditRemoveVariant(catInOrder.category, item.productId)}
-                          style={{ padding: 4 }}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="trash-outline" size={18} color={Colors.danger} />
-                        </TouchableOpacity>
+                        <View style={styles.variantItemInputsRow}>
+                          <View style={styles.variantItemField}>
+                            <Text style={styles.variantItemFieldLabel}>QTY</Text>
+                            <TextInput
+                              style={styles.variantItemInput}
+                              value={String(item.quantity || '')}
+                              onChangeText={(val) => handleEditItemUpdate(catInOrder.category, item.productId, 'quantity', val)}
+                              keyboardType="number-pad"
+                              placeholder="0"
+                              placeholderTextColor={Colors.textSecondary}
+                            />
+                          </View>
+                          <View style={styles.variantItemField}>
+                            <Text style={styles.variantItemFieldLabel}>RATE</Text>
+                            <TextInput
+                              style={styles.variantItemInput}
+                              value={String(item.rate || '')}
+                              onChangeText={(val) => handleEditItemUpdate(catInOrder.category, item.productId, 'rate', val)}
+                              keyboardType="decimal-pad"
+                              placeholder="0"
+                              placeholderTextColor={Colors.textSecondary}
+                            />
+                          </View>
+                        </View>
                       </View>
                     ))}
                   </View>
@@ -1155,10 +1173,17 @@ const styles = StyleSheet.create({
   saveText: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textInverse },
   headerSaveBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.brand, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, minWidth: 76, justifyContent: 'center' },
   headerSaveText: { fontSize: 13, fontWeight: '800', color: Colors.textInverse, letterSpacing: 0.3 },
+  variantItemCard: { backgroundColor: Colors.bgSecondary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  variantItemTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  variantItemSize: { fontSize: 15, fontWeight: '700', color: Colors.text, flexShrink: 1, marginRight: 8 },
+  variantItemInputsRow: { flexDirection: 'row', gap: 10 },
+  variantItemField: { flex: 1, gap: 4 },
+  variantItemFieldLabel: { fontSize: 10, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 0.6 },
+  variantItemInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, height: 40, fontSize: 15, color: Colors.text, backgroundColor: Colors.bg, paddingHorizontal: 10, fontWeight: '600' },
   btnDisabled: { opacity: 0.5 },
   // Category Items
-  categoryCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.md },
-  categoryName: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.md },
+  categoryCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.md, alignSelf: 'stretch', width: '100%' },
+  categoryName: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.md, flexShrink: 1, flexWrap: 'wrap' },
   variantsList: { gap: Spacing.sm },
   variantItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.bgSecondary, borderRadius: 6, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm, gap: Spacing.sm },
   variantSize: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, flex: 0.8 },

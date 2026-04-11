@@ -487,40 +487,46 @@ export default function CreateOrderScreen() {
           ) : (
             categoriesInOrder.map((catInOrder, catIdx) => (
               <View key={catIdx} style={styles.categoryCard}>
-                <Text style={styles.categoryName}>{catInOrder.category}</Text>
+                <Text style={styles.categoryName} numberOfLines={3}>{catInOrder.category}</Text>
                 {catInOrder.categoryRate && <Text style={styles.categoryRateTag}>Rate: ₹{catInOrder.categoryRate}</Text>}
                 <View style={styles.variantsList}>
                   {catInOrder.items.map(item => (
-                    <View key={item.productId} style={[styles.variantItem, { paddingVertical: 4 }]}>
-                      <Text style={[styles.variantSize, { flex: 1 }]}>{item.size}</Text>
-                      <TextInput
-                        style={[styles.smallInput, { width: 45, textAlign: 'center' }]}
-                        value={String(item.quantity || '')}
-                        onChangeText={(val) => handleUpdateItem(catInOrder.category, item.productId, 'quantity', val)}
-                        keyboardType="number-pad"
-                        placeholder="Qty"
-                        placeholderTextColor={Colors.textSecondary}
-                      />
-                      <TextInput
-                        style={[styles.smallInput, { width: 55, textAlign: 'center' }]}
-                        value={String(item.rate || '')}
-                        onChangeText={(val) => handleUpdateItem(catInOrder.category, item.productId, 'rate', val)}
-                        keyboardType="decimal-pad"
-                        placeholder="Rate"
-                        placeholderTextColor={Colors.textSecondary}
-                      />
-                      {item.requireSerialNo && (
-                        <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
-                          <Ionicons name="barcode-outline" size={16} color={Colors.brand} />
+                    <View key={item.productId} style={styles.variantItemCard}>
+                      <View style={styles.variantItemTopRow}>
+                        <Text style={styles.variantItemSize} numberOfLines={1}>{item.size}</Text>
+                        <TouchableOpacity
+                          onPress={() => handleRemoveVariant(catInOrder.category, item.productId)}
+                          activeOpacity={0.7}
+                          style={{ padding: 4 }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.variantItemInputsRow}>
+                        <View style={styles.variantItemField}>
+                          <Text style={styles.variantItemFieldLabel}>QTY</Text>
+                          <TextInput
+                            style={styles.variantItemInput}
+                            value={String(item.quantity || '')}
+                            onChangeText={(val) => handleUpdateItem(catInOrder.category, item.productId, 'quantity', val)}
+                            keyboardType="number-pad"
+                            placeholder="0"
+                            placeholderTextColor={Colors.textSecondary}
+                          />
                         </View>
-                      )}
-                      <TouchableOpacity
-                        onPress={() => handleRemoveVariant(catInOrder.category, item.productId)}
-                        activeOpacity={0.7}
-                        style={{ padding: 4 }}
-                      >
-                        <Ionicons name="trash-outline" size={18} color={Colors.danger} />
-                      </TouchableOpacity>
+                        <View style={styles.variantItemField}>
+                          <Text style={styles.variantItemFieldLabel}>RATE</Text>
+                          <TextInput
+                            style={styles.variantItemInput}
+                            value={String(item.rate || '')}
+                            onChangeText={(val) => handleUpdateItem(catInOrder.category, item.productId, 'rate', val)}
+                            keyboardType="decimal-pad"
+                            placeholder="0"
+                            placeholderTextColor={Colors.textSecondary}
+                          />
+                        </View>
+                      </View>
                     </View>
                   ))}
                 </View>
@@ -779,12 +785,19 @@ const styles = StyleSheet.create({
   gowdownBoxTextSelected: { color: Colors.brand, fontWeight: '700' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { fontSize: FontSize.sm, color: Colors.textSecondary, fontStyle: 'italic', paddingVertical: Spacing.lg },
-  categoryCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.md },
-  categoryName: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.sm },
+  categoryCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.md, alignSelf: 'stretch', width: '100%' },
+  categoryName: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.sm, flexShrink: 1, flexWrap: 'wrap' },
   categoryRateTag: { fontSize: FontSize.xs, color: Colors.brand, fontWeight: '700', marginBottom: Spacing.md, backgroundColor: Colors.brand + '15', paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: 4, alignSelf: 'flex-start' },
   variantsList: { gap: Spacing.sm },
   variantItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.bgSecondary, borderRadius: 6, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, gap: Spacing.md },
   variantSize: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.text, flex: 1 },
+  variantItemCard: { backgroundColor: Colors.bgSecondary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  variantItemTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  variantItemSize: { fontSize: 15, fontWeight: '700', color: Colors.text, flexShrink: 1, marginRight: 8 },
+  variantItemInputsRow: { flexDirection: 'row', gap: 10 },
+  variantItemField: { flex: 1, gap: 4 },
+  variantItemFieldLabel: { fontSize: 10, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 0.6 },
+  variantItemInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, height: 40, fontSize: 15, color: Colors.text, backgroundColor: Colors.bg, paddingHorizontal: 10, fontWeight: '600' },
   variantRate: { fontSize: FontSize.sm, color: Colors.brand, fontWeight: '700', minWidth: 60, textAlign: 'right' },
   variantQtyCenter: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, textAlign: 'center', minWidth: 50 },
   addCategoryBtn: { flexDirection: 'row', backgroundColor: Colors.brand, borderRadius: 8, height: 48, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm, marginVertical: Spacing.lg, alignSelf: 'stretch' },
