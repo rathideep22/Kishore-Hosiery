@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Header, Query, Request
+from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Header, Query, Request, UploadFile, File
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -83,6 +83,9 @@ class UpdateBillRequest(BaseModel):
 class GodownUpdateRequest(BaseModel):
     godown: str
     readyParcels: int
+
+class GodownPrefixRequest(BaseModel):
+    prefix: str
 
 class CreateProductRequest(BaseModel):
     category: str
@@ -297,14 +300,32 @@ async def create_audit_log(user_id: str, action: str, order_id: str = None, deta
     await db.audit_logs.insert_one({**log_entry})
 
 
-async def get_next_order_id():
+# Fallback prefix when a godown isn't set or hasn't been configured yet.
+DEFAULT_ORDER_PREFIX = "KH"
+
+
+async def get_next_order_id(godown_name: Optional[str] = None) -> tuple[str, int]:
+    """Reserve the next order number for a given godown.
+
+    Looks up the godown's configured prefix (set via seeding or the
+    update-prefix endpoint) and atomically increments a per-prefix
+    counter so each warehouse has its own independent numbering. Falls
+    back to DEFAULT_ORDER_PREFIX when the godown is missing or has no
+    prefix — this keeps legacy orders flowing through the same path.
+    """
+    prefix = DEFAULT_ORDER_PREFIX
+    if godown_name:
+        godown = await db.gowdowns.find_one({"name": godown_name})
+        if godown and godown.get("prefix"):
+            prefix = godown["prefix"]
+    counter_name = f"orderId:{prefix}"
     counter = await db.counters.find_one_and_update(
-        {"name": "orderId"},
+        {"name": counter_name},
         {"$inc": {"value": 1}},
         upsert=True,
-        return_document=True
+        return_document=True,
     )
-    return counter['value']
+    return prefix, counter["value"]
 
 
 # ─── Health Check (Public) ────────────────────────────────────────────────────
@@ -399,7 +420,9 @@ async def get_orders(
     status: Optional[str] = None,
     search: Optional[str] = None,
     godown: Optional[str] = None,
-    include_completed: Optional[bool] = False
+    include_completed: Optional[bool] = False,
+    limit: int = Query(500, ge=1, le=1000),
+    skip: int = Query(0, ge=0),
 ):
     conditions = []
     user_role = user.get('role', 'staff')
@@ -430,28 +453,40 @@ async def get_orders(
     elif status == 'active':
         conditions.append({"dispatched": False})
     if search:
+        # Escape regex metacharacters in the user-supplied search so a
+        # party name like "A+B" doesn't explode Mongo's regex engine.
+        safe_search = re.escape(search)
         conditions.append({
             "$or": [
-                {"partyName": {"$regex": search, "$options": "i"}},
-                {"orderId": {"$regex": search, "$options": "i"}}
+                {"partyName": {"$regex": safe_search, "$options": "i"}},
+                {"orderId": {"$regex": safe_search, "$options": "i"}}
             ]
         })
     if godown:
         conditions.append({"godown": godown})
     query = {"$and": conditions} if conditions else {}
-    orders = await db.orders.find(query, {"_id": 0}).sort("createdAt", -1).to_list(500)
+    # Response shape stays an array (all existing callers expect that),
+    # but skip/limit are now honourable so older clients keep getting the
+    # newest 500 while new clients can page deeper.
+    orders = await (
+        db.orders.find(query, {"_id": 0})
+        .sort("createdAt", -1)
+        .skip(skip)
+        .limit(limit)
+        .to_list(length=limit)
+    )
     return orders
 
 
 @api_router.post("/orders")
 async def create_order(req: CreateOrderRequest, user: dict = Depends(get_auth_user)):
     require_admin_or_staff(user)
-    order_num = await get_next_order_id()
+    prefix, order_num = await get_next_order_id(req.godown)
     items = [item.dict() for item in req.items] if req.items else []
     total_parcels = sum(item.quantity for item in req.items) if req.items else req.totalParcels or 0
     order = {
         "id": str(uuid.uuid4()),
-        "orderId": f"KH-{order_num:04d}",
+        "orderId": f"{prefix}-{order_num:04d}",
         "partyName": req.partyName,
         "location": req.location,
         "message": req.message,
@@ -514,8 +549,58 @@ async def update_order(order_id: str, req: UpdateOrderRequest, user: dict = Depe
     if req.message is not None:
         update["message"] = req.message
     if req.items is not None:
-        update["items"] = [item.dict() for item in req.items]
-    if req.totalParcels is not None:
+        # Merge incoming items with existing ones so that weights/serial
+        # numbers already captured for unchanged products are preserved.
+        # Editing an order means adding, removing, or tweaking lines — it
+        # must never wipe fulfilment progress that has already happened.
+        existing_by_pid = {
+            (it.get('productId') or ''): it
+            for it in (order.get('items') or [])
+        }
+        merged_items: List[dict] = []
+        for incoming in req.items:
+            new_item = incoming.dict()
+            prev = existing_by_pid.get(new_item['productId'])
+            new_qty = int(new_item.get('quantity') or 0)
+            if prev:
+                prev_fulfil = list(prev.get('fulfillment') or [])
+                if len(prev_fulfil) < new_qty:
+                    prev_fulfil.extend([None] * (new_qty - len(prev_fulfil)))
+                else:
+                    prev_fulfil = prev_fulfil[:new_qty]
+                new_item['fulfillment'] = prev_fulfil
+
+                prev_serials = list(prev.get('serialNumbers') or [])
+                if len(prev_serials) < new_qty:
+                    prev_serials.extend([None] * (new_qty - len(prev_serials)))
+                else:
+                    prev_serials = prev_serials[:new_qty]
+                new_item['serialNumbers'] = prev_serials
+            else:
+                new_item['fulfillment'] = [None] * new_qty
+                new_item['serialNumbers'] = [None] * new_qty
+            merged_items.append(new_item)
+        update["items"] = merged_items
+
+        # Recalculate totalParcels and readinessStatus from the merged state
+        # so status stays consistent with the new quantities.
+        new_total = sum(int(it.get('quantity') or 0) for it in merged_items)
+        update["totalParcels"] = new_total
+        fulfilled_count = sum(
+            1
+            for it in merged_items
+            for w in (it.get('fulfillment') or [])
+            if w is not None
+        )
+        if new_total == 0:
+            update["readinessStatus"] = "Pending"
+        elif fulfilled_count >= new_total:
+            update["readinessStatus"] = "Ready"
+        elif fulfilled_count > 0:
+            update["readinessStatus"] = "Partial Ready"
+        else:
+            update["readinessStatus"] = "Pending"
+    elif req.totalParcels is not None:
         update["totalParcels"] = req.totalParcels
         total_ready = sum(g.get('readyParcels', 0) for g in order.get('godownDistribution', []))
         if total_ready >= req.totalParcels:
@@ -764,10 +849,10 @@ async def split_order(order_id: str, req: Request, user: dict = Depends(get_auth
     if not remaining_items:
         raise HTTPException(status_code=400, detail="No unfulfilled parcels to split")
 
-    # Create remainder order
-    order_num = await get_next_order_id()
+    # Create remainder order — use the destination godown's own numbering
+    prefix, order_num = await get_next_order_id(remainder_godown)
     new_order_id_value = str(uuid.uuid4())
-    new_order_display_id = f"KH-{order_num:04d}"
+    new_order_display_id = f"{prefix}-{order_num:04d}"
 
     new_order = {
         "id": new_order_id_value,
@@ -1048,6 +1133,120 @@ async def create_product(req: CreateProductRequest, user: dict = Depends(get_aut
     return product
 
 
+@api_router.post("/products/import")
+async def import_products(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_auth_user),
+):
+    """Bulk import products from an Excel file.
+
+    The file must match the format of ListofItems.xlsx used for seeding:
+    Sheet1, data starts at row 4, columns A..D are
+    category | size | printName | alias. Existing aliases are updated,
+    new ones are inserted. Returns a summary of rows processed.
+    """
+    require_admin(user)
+
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="File must be an Excel spreadsheet (.xlsx / .xls)")
+
+    try:
+        import openpyxl
+        from io import BytesIO
+    except ImportError:
+        raise HTTPException(status_code=500, detail="Excel import library not available on the server")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    try:
+        wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read the spreadsheet: {e}")
+
+    # Prefer Sheet1 (matches ListofItems.xlsx), but fall back to the first
+    # sheet so users don't have to rename tabs before uploading.
+    ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb[wb.sheetnames[0]]
+
+    # Detect the data start row. ListofItems.xlsx uses rows 1-3 as header
+    # metadata and row 4 onwards for data. If the first row already looks
+    # like data (column A is non-empty and not a label), start at row 1.
+    start_row = 4
+    first_val = ws.cell(1, 1).value
+    if first_val and str(first_val).strip().lower() not in {
+        "list of items", "category", "item category", "items", "s.no"
+    }:
+        start_row = 1
+
+    inserted = 0
+    updated = 0
+    skipped = 0
+    errors: List[str] = []
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    for row_idx in range(start_row, ws.max_row + 1):
+        category = ws.cell(row_idx, 1).value
+        size = ws.cell(row_idx, 2).value
+        print_name = ws.cell(row_idx, 3).value
+        alias = ws.cell(row_idx, 4).value
+
+        # Blank/header-ish rows — silently skip.
+        if not category or not size or not alias:
+            skipped += 1
+            continue
+
+        category_s = str(category).strip()
+        size_s = str(size).strip()
+        print_name_s = str(print_name).strip() if print_name else ""
+        alias_s = str(alias).strip()
+
+        if not category_s or not size_s or not alias_s:
+            skipped += 1
+            continue
+
+        try:
+            existing = await db.products.find_one({"alias": alias_s})
+            if existing:
+                await db.products.update_one(
+                    {"alias": alias_s},
+                    {"$set": {
+                        "category": category_s,
+                        "size": size_s,
+                        "printName": print_name_s,
+                        "updatedAt": now_iso,
+                    }},
+                )
+                updated += 1
+            else:
+                await db.products.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "category": category_s,
+                    "size": size_s,
+                    "printName": print_name_s,
+                    "alias": alias_s,
+                    "createdAt": now_iso,
+                    "updatedAt": now_iso,
+                })
+                inserted += 1
+        except Exception as e:
+            errors.append(f"Row {row_idx} ({alias_s}): {e}")
+
+    await create_audit_log(
+        user['id'],
+        "PRODUCTS_IMPORTED",
+        None,
+        f"Imported products from {file.filename}: {inserted} new, {updated} updated, {skipped} skipped",
+    )
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors[:20],
+    }
+
+
 @api_router.get("/products/{product_id}")
 async def get_product(product_id: str, user: dict = Depends(get_auth_user)):
     product = await db.products.find_one({"id": product_id}, {"_id": 0})
@@ -1094,6 +1293,35 @@ async def delete_product(product_id: str, user: dict = Depends(get_auth_user)):
 async def get_gowdowns(user: dict = Depends(get_auth_user)):
     gowdowns = await db.gowdowns.find({}, {"_id": 0}).to_list(100)
     return gowdowns
+
+
+@api_router.put("/gowdowns/{gowdown_id}/prefix")
+async def update_gowdown_prefix(
+    gowdown_id: str,
+    req: GodownPrefixRequest,
+    user: dict = Depends(get_auth_user),
+):
+    require_admin(user)
+    # Normalise the prefix: uppercase, letters/digits only, 1–5 chars.
+    prefix = re.sub(r"[^A-Za-z0-9]", "", req.prefix or "").upper()
+    if not prefix or len(prefix) > 5:
+        raise HTTPException(status_code=400, detail="Prefix must be 1–5 alphanumeric characters")
+
+    godown = await db.gowdowns.find_one({"id": gowdown_id})
+    if not godown:
+        raise HTTPException(status_code=404, detail="Gowdown not found")
+
+    # Two godowns sharing the same prefix would collide on the counter.
+    clash = await db.gowdowns.find_one({"prefix": prefix, "id": {"$ne": gowdown_id}})
+    if clash:
+        raise HTTPException(status_code=409, detail=f"Prefix '{prefix}' is already used by {clash['name']}")
+
+    await db.gowdowns.update_one(
+        {"id": gowdown_id},
+        {"$set": {"prefix": prefix, "updatedAt": datetime.now(timezone.utc).isoformat()}},
+    )
+    await create_audit_log(user['id'], "GODOWN_PREFIX_UPDATED", gowdown_id, f"Prefix set to {prefix}")
+    return await db.gowdowns.find_one({"id": gowdown_id}, {"_id": 0})
 
 
 # ─── Notification Routes ─────────────────────────────────────────────────────
@@ -1296,17 +1524,28 @@ async def startup():
     product_count = await db.products.count_documents({})
     logger.info(f"Products in database: {product_count}")
 
-    # Seed gowdowns
-    gowdowns = ["Sundha", "Lal-Shivnagar"]
-    for gowdown_name in gowdowns:
-        existing = await db.gowdowns.find_one({"name": gowdown_name})
+    # Seed gowdowns with default per-gowdown order-id prefixes. Admins can
+    # override these later via PUT /gowdowns/{id}/prefix.
+    default_gowdowns = [
+        {"name": "Sundha", "prefix": "SU"},
+        {"name": "Lal-Shivnagar", "prefix": "LS"},
+    ]
+    for gd in default_gowdowns:
+        existing = await db.gowdowns.find_one({"name": gd["name"]})
+        now_iso = datetime.now(timezone.utc).isoformat()
         if not existing:
             await db.gowdowns.insert_one({
                 "id": str(uuid.uuid4()),
-                "name": gowdown_name,
-                "createdAt": datetime.now(timezone.utc).isoformat(),
-                "updatedAt": datetime.now(timezone.utc).isoformat()
+                "name": gd["name"],
+                "prefix": gd["prefix"],
+                "createdAt": now_iso,
+                "updatedAt": now_iso,
             })
+        elif not existing.get("prefix"):
+            await db.gowdowns.update_one(
+                {"id": existing["id"]},
+                {"$set": {"prefix": gd["prefix"], "updatedAt": now_iso}},
+            )
     logger.info("Gowdowns seeded successfully")
 
     counter = await db.counters.find_one({"name": "orderId"})

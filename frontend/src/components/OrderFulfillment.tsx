@@ -443,7 +443,14 @@ export function OrderFulfillment({
                               activeOpacity={0.7}
                             >
                               {done ? (
-                                <Text style={styles.dotWeightText}>{Number(w).toFixed(0)}</Text>
+                                <Text
+                                  style={styles.dotWeightText}
+                                  numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                  minimumFontScale={0.6}
+                                >
+                                  {String(parseFloat(Number(w).toFixed(2)))}
+                                </Text>
                               ) : (
                                 <Text style={styles.dotEmptyText}>{idx + 1}</Text>
                               )}

@@ -4,6 +4,7 @@ import {
   ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
@@ -23,6 +24,7 @@ interface User {
 
 export default function UsersScreen() {
   const { user } = useAuth();
+  const router = useRouter();
   const { width } = useResponsive();
   const theme = getResponsiveTheme(width);
   const isSmallPhone = width < 390;
@@ -44,7 +46,10 @@ export default function UsersScreen() {
     try {
       const data = await api.get('/users');
       setUsers(data);
-      filterUsers(data, search);
+      // No manual filter call here — the `[search, users]` effect below
+      // re-runs `filterUsers` with the current search term whenever users
+      // change, so referencing `search` in a `[]`-deps callback (stale
+      // closure) is both unnecessary and wrong.
     } catch {} finally {
       setLoading(false);
       setRefreshing(false);
@@ -170,14 +175,24 @@ export default function UsersScreen() {
             <Text style={styles.title}>Users</Text>
             <Text style={styles.subtitle}>Manage team members</Text>
           </View>
-          <TouchableOpacity
-            testID="toggle-add-user-btn"
-            style={styles.addBtn}
-            onPress={() => setShowForm(!showForm)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name={showForm ? 'close' : 'person-add'} size={24} color={Colors.textInverse} />
-          </TouchableOpacity>
+          <View style={styles.headerBtns}>
+            <TouchableOpacity
+              testID="godowns-btn"
+              style={styles.godownBtn}
+              onPress={() => router.push('/godowns')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="business-outline" size={22} color={Colors.brand} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="toggle-add-user-btn"
+              style={styles.addBtn}
+              onPress={() => setShowForm(!showForm)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name={showForm ? 'close' : 'person-add'} size={24} color={Colors.textInverse} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <SearchInput
@@ -292,8 +307,10 @@ export default function UsersScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  title: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.text, flex: 1, numberOfLines: 1 },
+  title: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.text, flex: 1 },
   subtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  headerBtns: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  godownBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', minHeight: 44, minWidth: 44, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
   addBtn: { backgroundColor: Colors.brand, width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', minHeight: 44, minWidth: 44 },
   form: { margin: Spacing.sm, padding: Spacing.md, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, gap: Spacing.sm },
   formTitle: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text },
@@ -306,10 +323,10 @@ const styles = StyleSheet.create({
   roleRow: { flexDirection: 'row', gap: Spacing.xs, marginBottom: 0 },
   roleBtn: { flex: 1, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, height: 40, justifyContent: 'center', alignItems: 'center', minHeight: 40 },
   roleBtnActive: { backgroundColor: Colors.brand, borderColor: Colors.brand },
-  roleBtnText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.textSecondary, numberOfLines: 1 },
+  roleBtnText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.textSecondary },
   roleBtnTextActive: { color: Colors.textInverse },
   saveBtn: { backgroundColor: Colors.brand, borderRadius: 8, height: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center', marginTop: Spacing.xs },
-  saveBtnText: { color: Colors.textInverse, fontSize: FontSize.sm, fontWeight: '700', numberOfLines: 1 },
+  saveBtnText: { color: Colors.textInverse, fontSize: FontSize.sm, fontWeight: '700' },
   listContent: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, gap: Spacing.xs },
   userCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3, elevation: 2 },
   userCardContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm, gap: Spacing.xs },
@@ -321,14 +338,14 @@ const styles = StyleSheet.create({
   avatarText: { color: Colors.textInverse, fontWeight: '700', fontSize: FontSize.xs },
   userDetails: { flex: 1, minWidth: 0 },
   userMeta: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
-  userName: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.text, numberOfLines: 1 },
-  userPhone: { fontSize: 9, color: Colors.textSecondary, fontWeight: '600', numberOfLines: 1 },
+  userName: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.text },
+  userPhone: { fontSize: 9, color: Colors.textSecondary, fontWeight: '600' },
   userActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginLeft: Spacing.xs },
   rolePill: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, justifyContent: 'center', minHeight: 26 },
   adminPill: { backgroundColor: Colors.brand + '18' },
   staffPill: { backgroundColor: Colors.info + '18' },
   accountantPill: { backgroundColor: Colors.warning + '18' },
-  roleText: { fontSize: 8, fontWeight: '800', letterSpacing: 0.3, numberOfLines: 1 },
+  roleText: { fontSize: 8, fontWeight: '800', letterSpacing: 0.3 },
   adminText: { color: Colors.brand },
   staffText: { color: Colors.info },
   accountantText: { color: Colors.warning },
@@ -339,12 +356,12 @@ const styles = StyleSheet.create({
   modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 1000, paddingHorizontal: Spacing.md },
   modalContent: { backgroundColor: Colors.surface, borderRadius: 14, padding: Spacing.md, width: '100%', maxWidth: 300, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 },
   modalHeader: { alignItems: 'center', marginBottom: Spacing.sm },
-  modalTitle: { fontSize: FontSize.md, fontWeight: '800', color: Colors.text, marginTop: Spacing.xs, numberOfLines: 1 },
+  modalTitle: { fontSize: FontSize.md, fontWeight: '800', color: Colors.text, marginTop: Spacing.xs },
   modalMessage: { fontSize: FontSize.xs, color: Colors.textSecondary, marginBottom: Spacing.sm, textAlign: 'center' },
-  modalUserInfo: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, marginBottom: Spacing.md, textAlign: 'center', numberOfLines: 2 },
+  modalUserInfo: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, marginBottom: Spacing.md, textAlign: 'center' },
   modalButtons: { flexDirection: 'row', gap: Spacing.sm },
   modalBtnNo: { flex: 1, paddingVertical: Spacing.sm, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, alignItems: 'center', minHeight: 40 },
-  modalBtnNoText: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.text, numberOfLines: 1 },
+  modalBtnNoText: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.text },
   modalBtnYes: { flex: 1, paddingVertical: Spacing.sm, backgroundColor: Colors.danger, borderRadius: 8, alignItems: 'center', minHeight: 40 },
-  modalBtnYesText: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textInverse, numberOfLines: 1 },
+  modalBtnYesText: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textInverse },
 });

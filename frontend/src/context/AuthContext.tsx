@@ -39,6 +39,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     loadAuth();
+    // If any request comes back with 401 the token is dead — kick the
+    // user out cleanly so the UI doesn't hang in a broken state.
+    api.setOnUnauthorized(() => { void logout(); });
+    return () => { api.setOnUnauthorized(null); };
   }, []);
 
   useEffect(() => {

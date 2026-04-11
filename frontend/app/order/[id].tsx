@@ -11,6 +11,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
 import { SearchInput } from '../../src/components/SearchInput';
 import { OrderFulfillment } from '../../src/components/OrderFulfillment';
+import { SplitOrderModal } from '../../src/components/SplitOrderModal';
 import { useResponsive } from '../../src/utils/responsive';
 import { getResponsiveTheme } from '../../src/constants/responsiveTheme';
 import { Colors, FontSize, Spacing } from '../../src/constants/theme';
@@ -106,8 +107,6 @@ export default function OrderDetailScreen() {
   const [editVariantSelections, setEditVariantSelections] = useState<any[]>([]);
   const [categoryMetas, setCategoryMetas] = useState<Record<string, boolean>>({});
   const [showSplitModal, setShowSplitModal] = useState(false);
-  const [splitGodown, setSplitGodown] = useState('');
-  const [splittingOrder, setSplittingOrder] = useState(false);
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -185,25 +184,15 @@ export default function OrderDetailScreen() {
     }, [fetchOrder])
   );
 
-  const handleSplitOrder = async () => {
-    if (!splitGodown) {
-      Alert.alert('Select Godown', 'Please select which godown to send the remainder to');
-      return;
-    }
-
-    setSplittingOrder(true);
+  const handleSplitOrder = async (remainderGodown: string) => {
     try {
-      const response = await api.put(`/orders/${id}/split`, {
-        remainderGodown: splitGodown
-      });
+      await api.put(`/orders/${id}/split`, { remainderGodown });
       Alert.alert('Success', 'Order split successfully. Remainder order created.');
       setShowSplitModal(false);
-      setSplitGodown('');
       await fetchOrder();
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to split order');
-    } finally {
-      setSplittingOrder(false);
+      throw e;
     }
   };
 
@@ -560,7 +549,10 @@ export default function OrderDetailScreen() {
             <View style={styles.compactHeader}>
               <View style={styles.compactHeaderLeft}>
                 <Text style={styles.compactPartyName}>{order.partyName}</Text>
-                <Text style={styles.compactLocation}>{order.location}</Text>
+                <Text style={styles.compactLocation}>
+                  {order.location}
+                  {order.godown ? ` · ${order.godown}` : ''}
+                </Text>
               </View>
               <View style={[styles.compactStatusBadge, { backgroundColor: (order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
                 <Text style={[styles.compactStatusText, { color: order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
@@ -604,6 +596,16 @@ export default function OrderDetailScreen() {
             <View style={styles.section}>
               <Text style={styles.partyName}>{order.partyName}</Text>
               <Text style={styles.locationText}>{order.location}</Text>
+              {order.godown ? (
+                <View style={styles.godownPill}>
+                  <Ionicons
+                    name={order.godown === 'Sundha' ? 'home' : 'storefront'}
+                    size={14}
+                    color={Colors.brand}
+                  />
+                  <Text style={styles.godownPillText}>{order.godown}</Text>
+                </View>
+              ) : null}
               <View style={[styles.statusBadge, { backgroundColor: (order.readinessStatus === 'Bill Generated' ? '#8B5CF6' : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger) + '18' }]}>
                 <Text style={[styles.statusBadgeText, { color: order.readinessStatus === 'Bill Generated' ? '#8B5CF6' : order.dispatched ? Colors.textSecondary : order.readinessStatus === 'Completed' ? Colors.success : order.readinessStatus === 'Ready' ? Colors.info : order.readinessStatus === 'Partial Ready' ? Colors.warning : Colors.danger }]}>
                   {order.readinessStatus === 'Completed' ? 'COMPLETED' : order.readinessStatus === 'Bill Generated' ? 'BILL GENERATED' : order.dispatched ? 'DISPATCHED' : order.readinessStatus.toUpperCase()}
@@ -1082,57 +1084,11 @@ export default function OrderDetailScreen() {
         </View>
       </Modal>
 
-      {/* Split Order Modal */}
-      <Modal visible={showSplitModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Split Order</Text>
-            <Text style={styles.modalLabel}>Select Godown for Remainder</Text>
-
-            <View style={styles.godownOptions}>
-              <TouchableOpacity
-                style={[styles.godownOption, splitGodown === 'Sundha' && styles.godownOptionSelected]}
-                onPress={() => setSplitGodown('Sundha')}
-              >
-                <Text style={[styles.godownOptionText, splitGodown === 'Sundha' && styles.godownOptionTextSelected]}>
-                  Sundha
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.godownOption, splitGodown === 'Lal-Shivnagar' && styles.godownOptionSelected]}
-                onPress={() => setSplitGodown('Lal-Shivnagar')}
-              >
-                <Text style={[styles.godownOptionText, splitGodown === 'Lal-Shivnagar' && styles.godownOptionTextSelected]}>
-                  Lal-Shivnagar
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => {
-                  setShowSplitModal(false);
-                  setSplitGodown('');
-                }}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveBtn, splittingOrder && styles.btnDisabled]}
-                onPress={handleSplitOrder}
-                disabled={splittingOrder}
-              >
-                {splittingOrder ? (
-                  <ActivityIndicator color="#FFF" />
-                ) : (
-                  <Text style={styles.saveText}>Split</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <SplitOrderModal
+        visible={showSplitModal}
+        onClose={() => setShowSplitModal(false)}
+        onSubmit={handleSplitOrder}
+      />
     </SafeAreaView>
   );
 }
@@ -1148,6 +1104,8 @@ const styles = StyleSheet.create({
   section: { padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border },
   partyName: { fontSize: FontSize.xxl, fontWeight: '900', color: Colors.text },
   locationText: { fontSize: FontSize.md, color: Colors.textSecondary, marginTop: Spacing.xs },
+  godownPill: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: Spacing.sm, backgroundColor: Colors.brand + '10', borderWidth: 1, borderColor: Colors.brand + '30', borderRadius: 999, paddingHorizontal: Spacing.md, paddingVertical: 4 },
+  godownPillText: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.brand },
   statusBadge: { alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, marginTop: Spacing.sm },
   statusBadgeText: { fontSize: FontSize.md, fontWeight: '700', letterSpacing: 0.5 },
   sectionLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1, marginBottom: Spacing.md },
@@ -1187,6 +1145,7 @@ const styles = StyleSheet.create({
   cancelText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textSecondary },
   saveBtn: { flex: 1, backgroundColor: Colors.brand, borderRadius: 12, height: 48, justifyContent: 'center', alignItems: 'center' },
   saveText: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textInverse },
+  btnDisabled: { opacity: 0.5 },
   // Category Items
   categoryCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: Spacing.lg, marginBottom: Spacing.md },
   categoryName: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.md },

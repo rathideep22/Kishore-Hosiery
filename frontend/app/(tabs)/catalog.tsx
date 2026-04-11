@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import { useAuth } from '../../src/context/AuthContext';
 import { api } from '../../src/utils/api';
 import { useResponsive } from '../../src/utils/responsive';
@@ -64,6 +65,7 @@ export default function CatalogScreen() {
     printName: '',
     alias: '',
   });
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -98,6 +100,43 @@ export default function CatalogScreen() {
     const q = search.toLowerCase();
     return categories.filter(cat => cat.name.toLowerCase().includes(q));
   }, [search, categories]);
+
+  const handleImportExcel = async () => {
+    try {
+      const pick = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel',
+        ],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (pick.canceled || !pick.assets?.length) return;
+      const asset = pick.assets[0];
+
+      const form = new FormData();
+      // React Native's FormData file shape is { uri, name, type }.
+      // Cast to any because TS lib.dom expects a Blob here.
+      form.append('file', {
+        uri: asset.uri,
+        name: asset.name || 'items.xlsx',
+        type: asset.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      } as any);
+
+      setImporting(true);
+      const result = await api.post('/products/import', form);
+      await fetchProducts();
+      Alert.alert(
+        'Import complete',
+        `${result.inserted} new · ${result.updated} updated · ${result.skipped} skipped` +
+          (result.errors?.length ? `\n\nErrors:\n${result.errors.join('\n')}` : ''),
+      );
+    } catch (e: any) {
+      Alert.alert('Import failed', e?.message || 'Could not import the file');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const handleAddCategory = async () => {
     if (!newCategory.trim()) {
@@ -610,15 +649,31 @@ export default function CatalogScreen() {
           <Text style={styles.title}>Product Catalog</Text>
           <Text style={styles.subtitle}>{getCategories().length} categories</Text>
         </View>
-        <TouchableOpacity
-          onPress={() => {
-            setNewCategory('');
-            setShowAddCategoryModal(true);
-          }}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="add-circle" size={28} color={Colors.success} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>
+          {isAdmin && (
+            <TouchableOpacity
+              onPress={handleImportExcel}
+              activeOpacity={0.7}
+              disabled={importing}
+              testID="catalog-import-btn"
+            >
+              {importing ? (
+                <ActivityIndicator size="small" color={Colors.brand} />
+              ) : (
+                <Ionicons name="cloud-upload-outline" size={26} color={Colors.brand} />
+              )}
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => {
+              setNewCategory('');
+              setShowAddCategoryModal(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add-circle" size={28} color={Colors.success} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search */}
@@ -772,8 +827,8 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
     gap: Spacing.xs,
   },
-  title: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, flex: 1, numberOfLines: 1 },
-  subtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2, numberOfLines: 1 },
+  title: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text, flex: 1 },
+  subtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
 
   // Search
   searchContainer: {
@@ -819,7 +874,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   categoryCardLeft: { flex: 1, minWidth: 0 },
-  categoryName: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, numberOfLines: 1 },
+  categoryName: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text },
   variantCount: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
   categoryCardRight: { marginLeft: Spacing.xs, flexShrink: 0 },
 
@@ -835,8 +890,8 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: Spacing.xs, minWidth: 40, minHeight: 40, justifyContent: 'center', alignItems: 'center' },
   headerTitleContainer: { flex: 1, minWidth: 0 },
-  headerTitle: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, numberOfLines: 1 },
-  headerSubtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2, numberOfLines: 1 },
+  headerTitle: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text },
+  headerSubtitle: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
 
   variantsList: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, gap: Spacing.xs },
@@ -854,9 +909,9 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   variantInfo: { flex: 1, minWidth: 0 },
-  variantAlias: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text, numberOfLines: 1 },
-  variantSize: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 1, numberOfLines: 1 },
-  variantPrintName: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2, numberOfLines: 1 },
+  variantAlias: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.text },
+  variantSize: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 1 },
+  variantPrintName: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
   variantActions: { flexDirection: 'row', gap: Spacing.xs, marginLeft: Spacing.xs, flexShrink: 0 },
   actionBtn: { padding: Spacing.xs, minWidth: 36, minHeight: 36, justifyContent: 'center', alignItems: 'center' },
 
