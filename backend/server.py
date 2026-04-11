@@ -482,7 +482,7 @@ async def get_orders(
 async def create_order(req: CreateOrderRequest, user: dict = Depends(get_auth_user)):
     require_admin_or_staff(user)
     prefix, order_num = await get_next_order_id(req.godown)
-    items = [item.dict() for item in req.items] if req.items else []
+    items = [item.model_dump() for item in req.items] if req.items else []
     total_parcels = sum(item.quantity for item in req.items) if req.items else req.totalParcels or 0
     order = {
         "id": str(uuid.uuid4()),
@@ -559,7 +559,7 @@ async def update_order(order_id: str, req: UpdateOrderRequest, user: dict = Depe
         }
         merged_items: List[dict] = []
         for incoming in req.items:
-            new_item = incoming.dict()
+            new_item = incoming.model_dump()
             prev = existing_by_pid.get(new_item['productId'])
             new_qty = int(new_item.get('quantity') or 0)
             if prev:

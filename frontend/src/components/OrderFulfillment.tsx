@@ -645,9 +645,8 @@ export function OrderFulfillment({
                 placeholderTextColor={Colors.textSecondary}
                 value={activeWeight}
                 onChangeText={val => handleFulfillmentChange(activeSlot.productId, activeSlot.parcelIndex, 'weight', val)}
-                keyboardType="decimal-pad"
-                returnKeyType="done"
-                selectTextOnFocus
+                editable={false}
+                caretHidden
                 showSoftInputOnFocus={false}
                 onBlur={() => {
                   // Format weight on blur (when user leaves field)
