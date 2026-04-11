@@ -10,7 +10,6 @@ import { api } from '../utils/api';
 import { Colors, FontSize, Spacing } from '../constants/theme';
 import { useResponsive } from '../utils/responsive';
 import { useAutoAdvancePref } from '../hooks/useAutoAdvancePref';
-import { NumericKeypad } from './NumericKeypad';
 
 interface OrderItem {
   productId: string;
@@ -645,9 +644,9 @@ export function OrderFulfillment({
                 placeholderTextColor={Colors.textSecondary}
                 value={activeWeight}
                 onChangeText={val => handleFulfillmentChange(activeSlot.productId, activeSlot.parcelIndex, 'weight', val)}
-                editable={false}
-                caretHidden
-                showSoftInputOnFocus={false}
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+                selectTextOnFocus
                 onBlur={() => {
                   // Format weight on blur (when user leaves field)
                   if (activeWeight && !isNaN(parseFloat(activeWeight))) {
@@ -674,20 +673,6 @@ export function OrderFulfillment({
             </View>
           </View>
           </ScrollView>
-
-          {/* Custom numeric keypad — replaces the OS keyboard so Samsung's
-              minus & hide-keyboard keys don't appear in weight entry */}
-          <NumericKeypad
-            value={activeWeight}
-            onChange={val =>
-              handleFulfillmentChange(activeSlot.productId, activeSlot.parcelIndex, 'weight', val)
-            }
-            onDone={() => {
-              const w = inputValues[activeKey!] ?? activeWeight ?? '';
-              const sn = serialValues[activeKey!] ?? null;
-              if (w) submitFulfillment(activeSlot.productId, activeSlot.parcelIndex, w, sn);
-            }}
-          />
 
           {/* Navigation row */}
           <View style={styles.navRow}>
