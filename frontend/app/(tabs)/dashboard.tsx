@@ -35,19 +35,24 @@ interface Order {
   createdAt: string;
 }
 
-function StatCard({ label, value, color, icon, width }: { label: string; value: number; color: string; icon: string; width: number }) {
+function StatCard({ label, value, color, icon, width, onPress }: { label: string; value: number; color: string; icon: string; width: number; onPress?: () => void }) {
   const columns = width < 390 ? 2 : width < 600 ? 3 : 5;
   const cardWidth = (width - 32) / columns - 5;
 
-  return (
-    <View style={[
-      styles.statCard,
-      { borderLeftColor: color, width: cardWidth },
-    ]}>
+  const content = (
+    <>
       <Ionicons name={icon as any} size={24} color={color} />
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
-    </View>
+    </>
+  );
+  const cardStyle = [styles.statCard, { borderLeftColor: color, width: cardWidth }];
+
+  if (!onPress) return <View style={cardStyle}>{content}</View>;
+  return (
+    <TouchableOpacity style={cardStyle} onPress={onPress} activeOpacity={0.7}>
+      {content}
+    </TouchableOpacity>
   );
 }
 
@@ -174,13 +179,13 @@ export default function DashboardScreen() {
 
         {stats && user?.role === 'admin' && (
           <View style={styles.statsGrid}>
-            <StatCard label="Active" value={stats.totalActive} color={Colors.info} icon="cube" width={width} />
-            <StatCard label="Pending" value={stats.pending || 0} color={Colors.danger} icon="alert-circle" width={width} />
-            <StatCard label="Partial" value={stats.partialReady || 0} color={Colors.warning} icon="time" width={width} />
-            <StatCard label="Ready" value={stats.ready || 0} color={Colors.info} icon="checkmark-circle" width={width} />
-            <StatCard label="Dispatched" value={stats.dispatched || 0} color={Colors.textSecondary} icon="send" width={width} />
-            <StatCard label="Bill Gen" value={stats.billGenerated || 0} color="#8B5CF6" icon="document-text" width={width} />
-            <StatCard label="Completed" value={stats.completed || 0} color={Colors.success} icon="checkmark-done-circle" width={width} />
+            <StatCard label="Active" value={stats.totalActive} color={Colors.info} icon="cube" width={width} onPress={() => router.push('/all-orders?status=')} />
+            <StatCard label="Pending" value={stats.pending || 0} color={Colors.danger} icon="alert-circle" width={width} onPress={() => router.push('/all-orders?status=pending')} />
+            <StatCard label="Partial" value={stats.partialReady || 0} color={Colors.warning} icon="time" width={width} onPress={() => router.push('/all-orders?status=partial')} />
+            <StatCard label="Ready" value={stats.ready || 0} color={Colors.info} icon="checkmark-circle" width={width} onPress={() => router.push('/all-orders?status=ready')} />
+            <StatCard label="Dispatched" value={stats.dispatched || 0} color={Colors.textSecondary} icon="send" width={width} onPress={() => router.push('/all-orders?status=dispatched')} />
+            <StatCard label="Bill Gen" value={stats.billGenerated || 0} color="#8B5CF6" icon="document-text" width={width} onPress={() => router.push('/all-orders?status=bill_generated')} />
+            <StatCard label="Completed" value={stats.completed || 0} color={Colors.success} icon="checkmark-done-circle" width={width} onPress={() => router.push('/all-orders?status=completed')} />
             <TouchableOpacity
               style={[styles.allOrdersCard, { width: (width - 32) / (width < 390 ? 2 : width < 600 ? 3 : 5) - 5 }]}
               onPress={() => router.push('/all-orders')}
@@ -195,17 +200,17 @@ export default function DashboardScreen() {
 
         {stats && user?.role === 'accountant' && (
           <View style={styles.statsGrid}>
-            <StatCard label="Needs Bill" value={stats.needsBill || 0} color={Colors.danger} icon="alert-circle" width={width} />
-            <StatCard label="Bill Gen" value={stats.billGenerated || 0} color="#8B5CF6" icon="document-text" width={width} />
+            <StatCard label="Needs Bill" value={stats.needsBill || 0} color={Colors.danger} icon="alert-circle" width={width} onPress={() => router.push('/all-orders?status=dispatched')} />
+            <StatCard label="Bill Gen" value={stats.billGenerated || 0} color="#8B5CF6" icon="document-text" width={width} onPress={() => router.push('/all-orders?status=bill_generated')} />
           </View>
         )}
 
         {stats && user?.role === 'staff' && (
           <View style={styles.statsGrid}>
-            <StatCard label="Active" value={stats.totalActive} color={Colors.info} icon="cube" width={width} />
-            <StatCard label="Pending" value={stats.pending || 0} color={Colors.danger} icon="alert-circle" width={width} />
-            <StatCard label="Partial" value={stats.partialReady || 0} color={Colors.warning} icon="time" width={width} />
-            <StatCard label="Ready" value={stats.ready || 0} color={Colors.info} icon="checkmark-circle" width={width} />
+            <StatCard label="Active" value={stats.totalActive} color={Colors.info} icon="cube" width={width} onPress={() => router.push('/all-orders?status=')} />
+            <StatCard label="Pending" value={stats.pending || 0} color={Colors.danger} icon="alert-circle" width={width} onPress={() => router.push('/all-orders?status=pending')} />
+            <StatCard label="Partial" value={stats.partialReady || 0} color={Colors.warning} icon="time" width={width} onPress={() => router.push('/all-orders?status=partial')} />
+            <StatCard label="Ready" value={stats.ready || 0} color={Colors.info} icon="checkmark-circle" width={width} onPress={() => router.push('/all-orders?status=ready')} />
           </View>
         )}
 

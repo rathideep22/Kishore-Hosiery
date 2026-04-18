@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, ScrollView, useWindowDimensions, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../src/context/AuthContext';
 import { api } from '../src/utils/api';
 import { SearchInput } from '../src/components/SearchInput';
@@ -14,6 +15,8 @@ import { DateRangePicker } from '../src/components/DateRangePicker';
 import { useResponsive } from '../src/utils/responsive';
 import { getResponsiveTheme } from '../src/constants/responsiveTheme';
 import { Colors, FontSize, Spacing } from '../src/constants/theme';
+
+const FILTERS_STORAGE_KEY = 'allOrdersFilters_v1';
 
 const STATUS_FILTERS = [
   { key: '', label: 'All' },
@@ -55,6 +58,7 @@ interface Order {
 export default function AllOrdersScreen() {
   const { user, wsMessage } = useAuth();
   const router = useRouter();
+  const params = useLocalSearchParams<{ status?: string; godown?: string }>();
   const { width } = useResponsive();
   const theme = getResponsiveTheme(width);
   const isSmallPhone = width < 430;
@@ -68,6 +72,8 @@ export default function AllOrdersScreen() {
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
+  const paramsAppliedRef = useRef(false);
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -77,12 +83,11 @@ export default function AllOrdersScreen() {
       ]);
       const allData = [...(sundhData || []), ...(lalShivData || [])];
       setAllOrders(allData);
-      applyFilters(allData, statusFilter, godownFilter, startDate, endDate, search, user?.role);
     } catch {} finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user?.role]);
+  }, []);
 
   const applyFilters = (allData: Order[], status: string, godown: string, start: string | null, end: string | null, searchQuery: string, userRole?: string) => {
     let filtered = allData;
@@ -139,9 +144,50 @@ export default function AllOrdersScreen() {
 
   useEffect(() => { fetchOrders(); }, []);
 
+  // Hydrate filters from AsyncStorage on first mount, then allow query params to override
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(FILTERS_STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved) as {
+            statusFilter?: string;
+            godownFilter?: string;
+            startDate?: string | null;
+            endDate?: string | null;
+            search?: string;
+          };
+          setStatusFilter(parsed.statusFilter ?? '');
+          setGodownFilter(parsed.godownFilter ?? '');
+          setStartDate(parsed.startDate ?? null);
+          setEndDate(parsed.endDate ?? null);
+          setSearch(parsed.search ?? '');
+        }
+      } catch {}
+      setFiltersHydrated(true);
+    })();
+  }, []);
+
+  // One-shot: query params override hydrated filters (e.g., dashboard stat tap)
+  useEffect(() => {
+    if (!filtersHydrated || paramsAppliedRef.current) return;
+    paramsAppliedRef.current = true;
+    if (params.status !== undefined) setStatusFilter(String(params.status));
+    if (params.godown !== undefined) setGodownFilter(String(params.godown));
+  }, [filtersHydrated, params.status, params.godown]);
+
+  // Persist filters whenever they change (after hydration)
+  useEffect(() => {
+    if (!filtersHydrated) return;
+    AsyncStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify({
+      statusFilter, godownFilter, startDate, endDate, search,
+    })).catch(() => {});
+  }, [filtersHydrated, statusFilter, godownFilter, startDate, endDate, search]);
+
+  // Re-apply filters whenever data or any filter changes — single source of truth
   useEffect(() => {
     applyFilters(allOrders, statusFilter, godownFilter, startDate, endDate, search, user?.role);
-  }, [statusFilter, godownFilter, startDate, endDate, search, user?.role]);
+  }, [allOrders, statusFilter, godownFilter, startDate, endDate, search, user?.role]);
 
   useEffect(() => {
     if (wsMessage?.type?.startsWith('ORDER_')) fetchOrders();

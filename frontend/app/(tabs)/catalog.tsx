@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  Modal, Alert, ActivityIndicator, ScrollView, useWindowDimensions, Switch, Platform
+  Modal, Alert, ActivityIndicator, ScrollView, useWindowDimensions, Switch, Platform, RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -73,6 +73,7 @@ export default function CatalogScreen() {
     alias: '',
   });
   const [importing, setImporting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -91,6 +92,7 @@ export default function CatalogScreen() {
       Alert.alert('Error', e.message);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -465,6 +467,9 @@ export default function CatalogScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.variantsList}
             style={{ flex: 1 }}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProducts(); }} tintColor={Colors.brand} />
+            }
           />
         )}
 
@@ -743,6 +748,9 @@ export default function CatalogScreen() {
           keyExtractor={(item) => item.name}
           contentContainerStyle={styles.categoriesList}
           style={{ flex: 1 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProducts(); }} tintColor={Colors.brand} />
+          }
         />
       )}
 
