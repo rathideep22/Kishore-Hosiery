@@ -24,11 +24,18 @@ interface OrderItem {
   fulfillment?: (number | null)[];
 }
 
+interface FulfillmentVariantSummary {
+  size: string;
+  rate?: string;
+  quantity: number;
+  fulfilled: number;
+}
+
 interface FulfillmentSummary {
   category: string;
   fulfilled: number;
   total: number;
-  rate?: string;
+  variants: FulfillmentVariantSummary[];
   totalWeight: number;
 }
 
@@ -312,12 +319,19 @@ export function OrderFulfillment({
           category: item.category,
           fulfilled: 0,
           total: 0,
-          rate: item.rate,
+          variants: [],
           totalWeight: 0
         };
       }
-      s[item.category].fulfilled += (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
+      const fulfilled = (item.fulfillment || []).filter(w => w !== null && w !== undefined).length;
+      s[item.category].fulfilled += fulfilled;
       s[item.category].total += item.quantity;
+      s[item.category].variants.push({
+        size: item.size,
+        rate: item.rate,
+        quantity: item.quantity,
+        fulfilled,
+      });
       // Sum all weights in this category
       const weights = (item.fulfillment || []).filter(w => w !== null && w !== undefined) as number[];
       s[item.category].totalWeight += weights.reduce((sum, w) => sum + w, 0);
@@ -498,10 +512,22 @@ export function OrderFulfillment({
                     {done && <Ionicons name="checkmark" size={12} color={badge} />}
                   </View>
                 </View>
-                <View style={styles.summaryDetails}>
-                  {cat.rate && <Text style={styles.summaryRate}>₹{cat.rate}/unit</Text>}
-                  {cat.totalWeight > 0 && <Text style={styles.summaryWeight}>{cat.totalWeight.toFixed(2)} kg</Text>}
-                </View>
+                {cat.variants.length > 0 && (
+                  <View style={styles.summaryVariants}>
+                    {cat.variants.map((v, i) => (
+                      <View key={`${v.size}-${i}`} style={styles.summaryVariantRow}>
+                        <Text style={styles.summaryVariantSize} numberOfLines={1}>{v.size}</Text>
+                        <Text style={styles.summaryVariantQty}>{v.fulfilled}/{v.quantity}</Text>
+                        {v.rate ? <Text style={styles.summaryVariantRate}>₹{v.rate}/unit</Text> : <Text style={styles.summaryVariantRate}>—</Text>}
+                      </View>
+                    ))}
+                  </View>
+                )}
+                {cat.totalWeight > 0 && (
+                  <View style={styles.summaryDetails}>
+                    <Text style={styles.summaryWeight}>{cat.totalWeight.toFixed(2)} kg</Text>
+                  </View>
+                )}
               </View>
             );
           })}
@@ -839,6 +865,11 @@ const styles = StyleSheet.create({
   summaryDetails: { flexDirection: 'row', gap: Spacing.md, marginBottom: 8, marginLeft: 0, paddingLeft: Spacing.xs },
   summaryRate: { fontSize: 11, fontWeight: '600', color: Colors.brand, backgroundColor: Colors.brand + '15', paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: 4 },
   summaryWeight: { fontSize: 11, fontWeight: '600', color: Colors.success, backgroundColor: Colors.success + '15', paddingHorizontal: Spacing.sm, paddingVertical: 2, borderRadius: 4 },
+  summaryVariants: { marginTop: 4, marginBottom: 8, paddingLeft: Spacing.sm, gap: 3 },
+  summaryVariantRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  summaryVariantSize: { fontSize: 11, fontWeight: '700', color: Colors.text, minWidth: 56 },
+  summaryVariantQty: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary, minWidth: 42 },
+  summaryVariantRate: { fontSize: 11, fontWeight: '600', color: Colors.brand },
   doneBtn: {
     marginTop: 12, backgroundColor: Colors.brand, borderRadius: 12,
     paddingVertical: 12, alignItems: 'center', minHeight: 44,
