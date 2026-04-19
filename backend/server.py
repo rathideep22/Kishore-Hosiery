@@ -774,6 +774,8 @@ async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(
         raise HTTPException(status_code=404, detail="Order not found")
 
     new_val = not order.get('dispatched', False)
+    was_pending = order.get('readinessStatus') == 'Pending'
+    auto_completed = new_val and was_pending
 
     update_data = {
         "dispatched": new_val,
@@ -783,27 +785,46 @@ async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(
         update_data["dispatchedAt"] = datetime.now(timezone.utc).isoformat()
         if dispatch_note:
             update_data["dispatchNote"] = dispatch_note
+    if auto_completed:
+        update_data["completed"] = True
+        update_data["completedAt"] = datetime.now(timezone.utc).isoformat()
 
     await db.orders.update_one({"id": order_id}, {"$set": update_data})
     updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
     updated = await refresh_pdf_for_order(updated)
 
-    await create_audit_log(user['id'], "DISPATCH_UPDATED", order_id,
-        f"Order {order['orderId']} {'dispatched' if new_val else 'un-dispatched'}")
+    audit_action = "DISPATCH_UPDATED"
+    audit_message = f"Order {order['orderId']} {'dispatched' if new_val else 'un-dispatched'}"
+    if auto_completed:
+        audit_action = "ORDER_AUTO_COMPLETED_ON_DISPATCH"
+        audit_message = f"Pending order {order['orderId']} dispatched and auto-completed"
+    await create_audit_log(user['id'], audit_action, order_id, audit_message)
 
     if new_val:
-        # Notify admins and accountants of dispatch
+        # Notify admins and accountants of dispatch. Skip the user who performed the action.
+        actor_id = user.get('id')
         admin_users = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(10)
         for admin_user in admin_users:
-            await create_notification(admin_user['id'],
-                f"Order {order['orderId']} has been dispatched!",
-                "order_dispatched", order['id'])
+            if admin_user['id'] == actor_id:
+                continue
+            if auto_completed:
+                await create_notification(admin_user['id'],
+                    f"Pending order {order['orderId']} was dispatched and completed",
+                    "order_auto_completed", order['id'])
+            else:
+                await create_notification(admin_user['id'],
+                    f"Order {order['orderId']} has been dispatched!",
+                    "order_dispatched", order['id'])
 
-        accountant_users = await db.users.find({"role": "accountant"}, {"_id": 0}).to_list(10)
-        for accountant_user in accountant_users:
-            await create_notification(accountant_user['id'],
-                f"Order {order['orderId']} has been dispatched!",
-                "order_dispatched", order['id'])
+        # Auto-completed pending orders never generate a bill, so skip accountants.
+        if not auto_completed:
+            accountant_users = await db.users.find({"role": "accountant"}, {"_id": 0}).to_list(10)
+            for accountant_user in accountant_users:
+                if accountant_user['id'] == actor_id:
+                    continue
+                await create_notification(accountant_user['id'],
+                    f"Order {order['orderId']} has been dispatched!",
+                    "order_dispatched", order['id'])
 
     await manager.broadcast({"type": "ORDER_UPDATED", "order": updated})
     return updated
@@ -1371,13 +1392,16 @@ async def get_dashboard_stats(user: dict = Depends(get_auth_user)):
     non_completed = {"completed": {"$ne": True}}
 
     if user_role == 'admin':
-        # Admin: active = all non-completed
-        total_active = await db.orders.count_documents(non_completed)
-        pending = await db.orders.count_documents({**non_completed, "readinessStatus": "Pending"})
-        partial = await db.orders.count_documents({**non_completed, "readinessStatus": "Partial Ready"})
-        ready = await db.orders.count_documents({**non_completed, "readinessStatus": "Ready"})
+        # Admin: buckets are mutually exclusive so they sum to totalActive.
+        # An order dispatched before being Ready is counted as Dispatched, not as Pending/Partial/Ready.
+        # Bill Generated supersedes Dispatched.
+        not_dispatched = {"$or": [{"dispatched": {"$ne": True}}, {"dispatched": {"$exists": False}}]}
+        pending = await db.orders.count_documents({**non_completed, **not_dispatched, "readinessStatus": "Pending"})
+        partial = await db.orders.count_documents({**non_completed, **not_dispatched, "readinessStatus": "Partial Ready"})
+        ready = await db.orders.count_documents({**non_completed, **not_dispatched, "readinessStatus": "Ready"})
         dispatched = await db.orders.count_documents({**non_completed, "dispatched": True, "readinessStatus": {"$ne": "Bill Generated"}})
         bill_generated = await db.orders.count_documents({**non_completed, "readinessStatus": "Bill Generated"})
+        total_active = pending + partial + ready + dispatched + bill_generated
         completed = await db.orders.count_documents({"completed": True})
         return {
             "totalActive": total_active,
