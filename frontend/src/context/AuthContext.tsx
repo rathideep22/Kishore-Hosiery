@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
-import { api } from '../utils/api';
+import { api, BACKEND_URL } from '../utils/api';
 
 interface User {
   id: string;
@@ -136,8 +136,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const connectWebSocket = (tkn: string) => {
-    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://13.60.90.159';
-    const wsUrl = backendUrl.replace('http', 'ws');
+    // BACKEND_URL is '' on https-hosted web builds (same-origin proxy mode);
+    // fall back to the page origin so the URL stays absolute for WebSocket.
+    const backendUrl =
+      BACKEND_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+    if (!backendUrl) return;
+    const wsUrl = backendUrl.replace(/^http/, 'ws');
     const ws = new WebSocket(`${wsUrl}/api/ws?token=${tkn}`);
     ws.onmessage = (event) => {
       try {

@@ -1,4 +1,22 @@
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://13.60.90.159';
+import { Platform } from 'react-native';
+
+function resolveBackendUrl(): string {
+  const configured = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://13.60.90.159';
+  // An https page (e.g. the Vercel-hosted web app) cannot call an http://
+  // backend directly — the browser blocks mixed content. Use same-origin
+  // paths instead and let the host's /api/* rewrite proxy to the backend.
+  if (
+    Platform.OS === 'web' &&
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'https:' &&
+    configured.startsWith('http://')
+  ) {
+    return '';
+  }
+  return configured;
+}
+
+export const BACKEND_URL = resolveBackendUrl();
 
 export class ApiError extends Error {
   status: number;
