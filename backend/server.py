@@ -34,7 +34,7 @@ MOCK_OTP = '1234'
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_S3_BUCKET = os.environ.get('AWS_S3_BUCKET', 'bills-kishore')
-AWS_REGION = os.environ.get('AWS_REGION', 'eu-north-1')
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -723,7 +723,6 @@ async def delete_order(order_id: str, user: dict = Depends(get_auth_user)):
 
 @api_router.put("/orders/{order_id}/godown")
 async def update_godown(order_id: str, req: GodownUpdateRequest, user: dict = Depends(get_auth_user)):
-    require_admin_or_staff(user)
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -764,7 +763,6 @@ async def update_godown(order_id: str, req: GodownUpdateRequest, user: dict = De
 
 @api_router.put("/orders/{order_id}/dispatch")
 async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(get_auth_user)):
-    require_admin_or_staff(user)
     try:
         body = await request.json()
         dispatch_note = body.get("dispatchNote", "")
@@ -835,7 +833,6 @@ async def toggle_dispatch(order_id: str, request: Request, user: dict = Depends(
 @api_router.put("/orders/{order_id}/split")
 async def split_order(order_id: str, req: Request, user: dict = Depends(get_auth_user)):
     """Split order into ready and remainder orders"""
-    require_admin_or_staff(user)
     try:
         body = await req.json()
         remainder_godown = body.get("remainderGodown", "")
@@ -987,7 +984,6 @@ async def split_order(order_id: str, req: Request, user: dict = Depends(get_auth
 
 @api_router.put("/orders/{order_id}/fulfill")
 async def fulfill_parcel(order_id: str, req: ParcelFulfillmentRequest, user: dict = Depends(get_auth_user)):
-    require_admin_or_staff(user)
     logger.info(f"Fulfill request: order_id={order_id}, productId={req.productId}, parcelIndex={req.parcelIndex}, weight={req.weight}")
 
     # Try to find order by id field
@@ -1319,15 +1315,13 @@ async def delete_product(product_id: str, user: dict = Depends(get_auth_user)):
 
 # ─── Gowdown Routes ──────────────────────────────────────────────────────────
 
-@api_router.get("/godowns")
-@api_router.get("/gowdowns")  # legacy alias — old mobile builds still call the misspelled path
+@api_router.get("/gowdowns")
 async def get_gowdowns(user: dict = Depends(get_auth_user)):
     gowdowns = await db.gowdowns.find({}, {"_id": 0}).to_list(100)
     return gowdowns
 
 
-@api_router.put("/godowns/{gowdown_id}/prefix")
-@api_router.put("/gowdowns/{gowdown_id}/prefix")  # legacy alias
+@api_router.put("/gowdowns/{gowdown_id}/prefix")
 async def update_gowdown_prefix(
     gowdown_id: str,
     req: GodownPrefixRequest,

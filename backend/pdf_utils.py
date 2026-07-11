@@ -34,7 +34,6 @@ class OrderPDFGenerator:
         aws_access_key = os.environ.get('AWS_ACCESS_KEY_ID')
         aws_secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
         aws_region = os.environ.get('AWS_REGION', 'eu-north-1')
-        self.aws_region = aws_region
 
         if aws_access_key and aws_secret_key:
             self.s3_client = boto3.client(
@@ -592,6 +591,6 @@ class OrderPDFGenerator:
         )
 
         # Generate permanent public URL
-        pdf_url = f"https://{self.bucket_name}.s3.{self.aws_region}.amazonaws.com/{pdf_key}"
+        pdf_url = f"https://{self.bucket_name}.s3.eu-north-1.amazonaws.com/{pdf_key}"
 
         return pdf_url
