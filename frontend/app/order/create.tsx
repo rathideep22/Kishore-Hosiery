@@ -107,7 +107,7 @@ export default function CreateOrderScreen() {
     try {
       const [productsData, gowdownsData] = await Promise.all([
         api.get('/products'),
-        api.get('/godowns'),
+        api.get('/gowdowns'),
       ]);
       setAllProducts(productsData);
       const uniqueCategories = Array.from(new Set(productsData.map((p: Product) => p.category))).sort() as string[];
