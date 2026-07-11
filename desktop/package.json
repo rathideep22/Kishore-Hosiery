@@ -1,0 +1,49 @@
+{
+  "name": "kishore-hosiery-desktop",
+  "version": "1.0.0",
+  "description": "Kishore Hosiery desktop app (Electron wrapper around the Expo web build)",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "sync-web": "rm -rf web && (cd ../frontend && npx expo export --platform web) && cp -R ../frontend/dist web",
+    "start": "electron .",
+    "build:win": "electron-builder --win --x64",
+    "build:win:portable": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.kishorehoisery.desktop",
+    "productName": "Kishore Hosiery",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "web/**/*",
+      "build/icon.png"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.png"
+    },
+    "portable": {
+      "artifactName": "KishoreHosiery-${version}-portable.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Kishore Hosiery",
+      "artifactName": "KishoreHosiery-${version}-setup.${ext}"
+    }
+  }
+}
