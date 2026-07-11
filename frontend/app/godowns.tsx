@@ -29,7 +29,7 @@ export default function GodownsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const data = await api.get('/gowdowns');
+      const data = await api.get('/godowns');
       setGodowns(data);
     } catch {} finally {
       setLoading(false);
@@ -45,7 +45,7 @@ export default function GodownsScreen() {
     if (next === (g.prefix || '').toUpperCase()) return;
     setSavingId(g.id);
     try {
-      const updated = await api.put(`/gowdowns/${g.id}/prefix`, { prefix: next });
+      const updated = await api.put(`/godowns/${g.id}/prefix`, { prefix: next });
       setGodowns(prev => prev.map(x => x.id === g.id ? { ...x, prefix: updated.prefix } : x));
       setEdits(prev => { const u = { ...prev }; delete u[g.id]; return u; });
     } catch (e: any) {

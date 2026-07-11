@@ -185,16 +185,18 @@ export default function SundhaScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Sundha</Text>
-          <Text style={styles.subtitle}>Gowdown Orders</Text>
+          <Text style={styles.subtitle}>Godown Orders</Text>
         </View>
-        <TouchableOpacity
-          style={styles.dispatchBtn}
-          onPress={() => router.push('/dispatch?godown=Sundha')}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="send" size={18} color="#fff" />
-          <Text style={styles.dispatchText}>Dispatch</Text>
-        </TouchableOpacity>
+        {user?.role !== 'accountant' && (
+          <TouchableOpacity
+            style={styles.dispatchBtn}
+            onPress={() => router.push('/dispatch?godown=Sundha')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="send" size={18} color="#fff" />
+            <Text style={styles.dispatchText}>Dispatch</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <SearchInput
@@ -215,7 +217,7 @@ export default function SundhaScreen() {
       {orders.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="cube-outline" size={48} color={Colors.border} />
-          <Text style={styles.emptyText}>No orders for Sundha gowdown</Text>
+          <Text style={styles.emptyText}>No orders for Sundha godown</Text>
         </View>
       ) : (
         <FlatList

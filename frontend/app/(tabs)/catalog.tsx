@@ -235,9 +235,7 @@ export default function CatalogScreen() {
     setDeleting(true);
     setDeleteMessage(null);
     try {
-      console.log('Deleting variant:', idToDelete, aliasToDelete);
       await api.del(`/products/${idToDelete}`);
-      console.log('Delete success');
       await fetchProducts();
       setDeleteMessage({ type: 'success', text: `${aliasToDelete} deleted successfully` });
     } catch (e: any) {
@@ -266,9 +264,7 @@ export default function CatalogScreen() {
     setDeleteMessage(null);
     try {
       const categoryProducts = getVariantsInCategory(categoryToDelete);
-      console.log(`Deleting category "${categoryToDelete}" with ${categoryProducts.length} variants`);
       await Promise.all(categoryProducts.map(p => api.del(`/products/${p.id}`)));
-      console.log('Category delete success');
       await fetchProducts();
       setDeleteMessage({ type: 'success', text: `${categoryToDelete} and ${categoryProducts.length} variant(s) deleted successfully` });
     } catch (e: any) {

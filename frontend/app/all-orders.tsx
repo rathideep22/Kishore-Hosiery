@@ -268,14 +268,16 @@ export default function AllOrdersScreen() {
             {isSmallPhone ? 'Back' : 'Back to Dashboard'}
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.dispatchHeaderBtn}
-          onPress={() => router.push('/dispatch?godown=All')}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="send" size={18} color="#fff" />
-          <Text style={styles.dispatchHeaderText}>Dispatch</Text>
-        </TouchableOpacity>
+        {user?.role !== 'accountant' && (
+          <TouchableOpacity
+            style={styles.dispatchHeaderBtn}
+            onPress={() => router.push('/dispatch?godown=All')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="send" size={18} color="#fff" />
+            <Text style={styles.dispatchHeaderText}>Dispatch</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <SearchInput

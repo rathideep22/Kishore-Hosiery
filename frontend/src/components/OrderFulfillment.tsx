@@ -163,7 +163,6 @@ export function OrderFulfillment({
         serialNo: serialValue
       };
 
-      console.log('📤 Sending fulfillment update:', payload);
       const response = await api.put(`/orders/${orderId}/fulfill`, payload);
       if (response.items) {
         onUpdate(response.items);

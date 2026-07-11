@@ -67,7 +67,6 @@ export default function OrderDetailScreen() {
   const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
-    console.log('Order detail screen - isAdmin:', isAdmin, 'user role:', user?.role);
   }, [isAdmin, user?.role]);
   const isAccountant = user?.role === 'accountant';
 
@@ -110,9 +109,7 @@ export default function OrderDetailScreen() {
 
   const fetchOrder = useCallback(async () => {
     try {
-      console.log('Fetching order with id:', id, 'type:', typeof id);
       const data = await api.get(`/orders/${id}`);
-      console.log('Order fetched:', data.id, data.orderId);
       setOrder(data);
       setBillNo(data.billNo || '');
     } catch (e: any) {
@@ -211,7 +208,7 @@ export default function OrderDetailScreen() {
         return;
       }
       if (!editGodown) {
-        Alert.alert('Missing Gowdown', 'Please select which gowdown (Sundha or Lal-Shivnagar)');
+        Alert.alert('Missing Godown', 'Please select which godown (Sundha or Lal-Shivnagar)');
         setActionLoading('');
         return;
       }
@@ -440,17 +437,13 @@ export default function OrderDetailScreen() {
   };
 
   const deleteOrder = () => {
-    console.log('Delete button clicked, order id:', id);
     setShowDeleteConfirm(true);
   };
 
   const performDelete = async () => {
-    console.log('🗑️ Starting delete for order:', id);
     setIsDeleting(true);
     try {
-      console.log('Sending DELETE request for order:', id);
       const response = await api.del(`/orders/${id}`);
-      console.log('✅ Delete response:', response);
       setShowDeleteConfirm(false);
       router.replace('/(tabs)/dashboard');
     } catch (e: any) {
@@ -778,7 +771,7 @@ export default function OrderDetailScreen() {
 
 
           {/* Split Order - show at bottom when partially filled */}
-          {!order.dispatched && (order.readinessStatus === 'Partial Ready' || order.readinessStatus === 'Pending') && (
+          {isAdmin && !order.dispatched && (order.readinessStatus === 'Partial Ready' || order.readinessStatus === 'Pending') && (
             <TouchableOpacity
               style={styles.splitBtn}
               onPress={() => setShowSplitModal(true)}

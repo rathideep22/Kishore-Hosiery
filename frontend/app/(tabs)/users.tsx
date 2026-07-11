@@ -100,9 +100,7 @@ export default function UsersScreen() {
 
   const performDelete = async (userId: string, name: string) => {
     try {
-      console.log('Deleting user:', userId);
       await api.del(`/users/${userId}`);
-      console.log('Delete success');
       await fetchUsers();
       Alert.alert('Success', `${name} deleted successfully`);
     } catch (e: any) {
@@ -152,7 +150,6 @@ export default function UsersScreen() {
             <TouchableOpacity
               testID={`delete-user-${item.phone}`}
               onPress={() => {
-                console.log('Delete button pressed for:', item.firstName, item.id);
                 deleteUser(item);
               }}
               activeOpacity={0.6}

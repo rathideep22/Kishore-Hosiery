@@ -107,13 +107,12 @@ export default function CreateOrderScreen() {
     try {
       const [productsData, gowdownsData] = await Promise.all([
         api.get('/products'),
-        api.get('/gowdowns'),
+        api.get('/godowns'),
       ]);
       setAllProducts(productsData);
       const uniqueCategories = Array.from(new Set(productsData.map((p: Product) => p.category))).sort() as string[];
       setCategories(uniqueCategories);
       setFilteredCategories(uniqueCategories);
-      console.log('📦 Gowdowns fetched:', gowdownsData);
       setGowdowns(gowdownsData);
       // Fetch category metadata (requireSerialNo)
       try {
@@ -323,12 +322,6 @@ export default function CreateOrderScreen() {
     0
   );
 
-  const calculateTotalWeight = () => {
-    // Note: For order creation, we won't have fulfillment data yet
-    // This is placeholder - actual weight will be calculated during fulfillment entry
-    return 0;
-  };
-
   const submit = async () => {
     if (!partyName.trim()) {
       Alert.alert('Missing Party Name', 'Please enter the party/customer name');
@@ -339,7 +332,7 @@ export default function CreateOrderScreen() {
       return;
     }
     if (!godown) {
-      Alert.alert('Missing Gowdown', 'Please select which gowdown this order belongs to (Sundha or Lal-Shivnagar)');
+      Alert.alert('Missing Godown', 'Please select which godown this order belongs to (Sundha or Lal-Shivnagar)');
       return;
     }
     if (categoriesInOrder.length === 0) {
@@ -358,9 +351,7 @@ export default function CreateOrderScreen() {
         items: allItems,
         totalParcels: totalParcels,
       };
-      console.log('📤 Submitting order:', payload);
       const response = await api.post('/orders', payload);
-      console.log('✅ Order created:', response);
       setLoading(false);
       router.replace('/(tabs)/dashboard');
     } catch (e: any) {
@@ -549,10 +540,6 @@ export default function CreateOrderScreen() {
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Total Parcels:</Text>
                 <Text style={styles.summaryValue}>{totalParcels}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Total Weight:</Text>
-                <Text style={styles.summaryValue}>0.00 kg</Text>
               </View>
             </View>
           )}
