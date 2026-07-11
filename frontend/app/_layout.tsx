@@ -3,6 +3,8 @@ import { Stack, useSegments, useRouter } from 'expo-router';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
+import { Ionicons } from '@expo/vector-icons';
 
 function RootNavigator() {
   const { user, isLoading } = useAuth();
@@ -44,6 +46,16 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts(Ionicons.font);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.splash}>
+        <ActivityIndicator size="large" color="#09090B" />
+      </View>
+    );
+  }
+
   return (
     <AuthProvider>
       <RootNavigator />

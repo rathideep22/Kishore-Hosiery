@@ -82,6 +82,9 @@ export default function LoginScreen() {
                   keyboardType="phone-pad"
                   maxLength={10}
                   autoFocus
+                  returnKeyType="send"
+                  onSubmitEditing={sendOTP}
+                  blurOnSubmit={false}
                 />
               </View>
               <Text style={styles.hint}>Only pre-registered users can login</Text>
@@ -113,6 +116,9 @@ export default function LoginScreen() {
                 onChangeText={setOtp}
                 keyboardType="number-pad"
                 maxLength={4}
+                returnKeyType="done"
+                onSubmitEditing={verifyOTP}
+                blurOnSubmit={false}
               />
               <TouchableOpacity
                 testID="verify-otp-btn"
